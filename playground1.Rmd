@@ -1,0 +1,386 @@
+---
+title: ""
+output: html_document
+---
+
+```{r q65nn, echo=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+library(data.table)
+library(magrittr)
+
+#library(fgread)
+library(Seurat)
+library(SingleR)
+library(ggplot2)
+library(RColorBrewer)
+
+source('common/module.R')
+load.module('common')
+```
+
+```{r zdt2p, echo=FALSE}
+config <- list(
+    cache='.cache'
+)
+
+data <- obj() %>%
+    lazy_prop(c2_wb_pbmc, {
+        UpdateSeuratObject(readRDS(file.path(
+            config$cache, 
+            'download/seurat_COVID19_freshWB-PBMC_cohort2_rhapsody_jonas_FG_2020-08-18.rds'
+        )))
+    }) %>%
+
+    lazy_prop(c2_neutrophils_integrated, {
+        UpdateSeuratObject(readRDS(file.path(
+            config$cache, 
+            'download/seurat_COVID19_Neutrophils_cohort2_rhapsody_jonas_FG_2020-08-18.rds'
+        )))
+    })
+```
+
+```{r wrxw4}
+options(repr.plot.width=10, repr.plot.height=10)
+
+color_clusters<-c(brewer.pal(n = 9,name = "Set1"),
+                  brewer.pal(n = 8,name = "Set2"),
+                  brewer.pal(n = 12,name = "Set3"),
+                  brewer.pal(n = 12,name = "Paired"),
+                  brewer.pal(n = 9,name = "Pastel1"),
+                  brewer.pal(n = 8,name = "Pastel2"),
+                  brewer.pal(n = 8,name = "Accent"))
+
+singleR_colors <- c("T cells" = "#776fb2",
+                    "T_cells" = "#776fb2",
+                    "CD4+ T-cells (naive)" = "#cecce2",
+                    "CD4+ T-cells" = "#cecce2",
+                    "CD4+ T cells" = "#cecce2",
+                    "T cells, CD4+" = "#cecce2",
+                    "CD4+/CD45RA+/CD25- Naive T" = "#cecce2",
+                    "CD4+ T Helper2" = "#cecce2",
+                    "CD4+ Tcm" = "#cecce2",
+                    "CD4+/CD45RO+ Memory" = "#cecce2",
+                    "CD4+ memory T-cells" = "#cecce2",
+                    "CD4+ Tem" = "#cecce2",
+                    
+                    "CD8+ T-cells (naive)" = "#422483",
+                    "CD8+/CD45RA+ Naive Cytotoxic" = "#422483",
+                    "CD8+ T-cells" = "#422483",
+                    "CD8+ T cells" = "#422483",
+                    "T cells, CD8+" = "#422483",
+                    "CD8+ Tcm" = "#422483",
+                    "CD8+ Cytotoxic T" = "#422483",
+                    "CD8+ Tem" = "#422483",
+                    
+                    "Treg cells" = "#004c9d",
+                    "CD4+/CD25 T Reg" = "#004c9d",
+                    "regulatory T-cells" = "#004c9d",
+                    
+                    "NKT cells" = "#684495",
+                    "NK T cells" = "#684495",
+                    "NK cells" = "#338eb0",
+                    "NK_cell" = "#338eb0",
+                    "CD56+ NK" = "#338eb0",
+                    
+                    "ILCs" = "#d9dada",
+                    
+                    "naive B-cells" = "#00963f",
+                    "B-cells" = "#00963f",
+                    "B_cell" = "#00963f",
+                    "B cells" = "#00963f",
+                    "CD19+ B" = "#00963f",
+                    "Pre-B_cell_CD34-" = "#00961a" ,
+                    "Pro-B_cell_CD34+" = "#00961a",
+                    "memory B-cells" = "#32ab6d",
+                    "class-switched memory B-cells" = "#7dc29e",
+                    "Plasma cells" = "#d5e7dd",
+                    
+                    "BM" = "#b3a930",
+                    "BM & Prog." = "#b3a930",
+                    "Progenitors" = "#b3a930", 
+                    "HSC" = "#b3a930",
+                    "HSCs" = "#b3a930",
+                    "HSC_-G-CSF" = "#b3a930",
+                    "HSC_CD34+" = "#b3a930",
+                    "CD34+ Precursors" = "#b3a930",
+                    "MPP" = "#dfd200",
+                    "CLP" = "#ffed00",
+                    "CMP" = "#fdef6d",
+                    "CMPs" = "#fdef6d",
+                    "GMP" = "#faf3a8",
+                    "GMPs" = "#faf3a8",
+                    "MEP" = "#e7bd00",
+                    "MEPs" = "#e7bd00",
+                    "Megakaryocytes" = "#efd873",
+                    
+                    "DC" = "#ef7c00",
+                    "Dendritic" = "#ef7c00",
+                    "Dendritic cells" = "#ef7c00",
+                    
+                    "Monocyte (CD16-)" = "#e6330f",
+                    "Monocyte (CD16+)" = "#ea5552",
+                    "Monocyte (CD14+)" = "#f4a5a5",
+                    "Monocytes" = "#f4a5a5",
+                    "Monocyte" = "#f4a5a5",
+                    "CD14+ Monocyte" = "#f4a5a5",
+                    
+                    "Pro-Myelocyte" = "#001816",
+                    "Myelocyte" = "#00312C",
+                    "Granulocytes" = "#006358",
+                    "Eosinophils" = "#00af9d",
+                    "Neutrophils" = "#87cbbe",
+                    "Basophils" = "#cae6e4",
+                    "Macrophages" = "#b41909",
+                    "Macrophage" = "#b41909",
+                    "Erythrocytes" = "#bb79b2",
+                    "Erythroblast" = "#bb79b2",
+                    "Erythroid cells" = "#bb79b2",
+                    "Platelets" = "#2a3937",
+                    
+                    "Adipocytes" = "#e2a9cd",
+                    "Fibroblasts" = "#be348b",
+                    "Endothelial cells" = "#7d2685",
+                    "Endothelial_cells" = "#7d2685",
+                    "mv Endothelial cells" = "#632282",
+                    "Myocytes"="#A70000",
+                    "Smooth_muscle_cells"="#A70000",
+                    "Chondrocytes"="#F0F7DA",
+                    "Epithelial_cells"="#A67C00",
+                    "Neurons"="#63CDE3"
+)
+```
+
+```{r os7qd, echo=FALSE}
+ggplot(data$c2_wb_pbmc@meta.data, aes(x = group_per_sample , fill= purification))+
+  geom_bar()+
+  geom_text(stat='count', aes(label=..count..), position = position_stack(vjust = 0.5))+
+  theme_classic()+
+  theme(
+    panel.grid=element_blank(),
+    legend.text=element_text(size=10),
+    text = element_text(size=12),
+    legend.title = element_blank(),
+    axis.title.x = element_blank()
+  )+  
+  ylab("# of cells")+
+  scale_fill_manual(values = color_clusters)+ 
+  RotatedAxis()
+```
+
+```{r a7wnr}
+ggplot(data$c2_wb_pbmc@meta.data, aes(x =  group_per_sample , fill= donor))+
+  geom_bar()+
+  geom_text(stat='count', aes(label=..count..), position = position_stack(vjust = 0.5))+
+  theme_classic()+
+  theme(
+    panel.grid=element_blank(),
+    legend.text=element_text(size=10),
+    text = element_text(size=12),
+    legend.title = element_blank(),
+    axis.title.x = element_blank()
+  )+  
+  ylab("# of cells")+
+  scale_fill_manual(values = color_clusters)+ 
+  RotatedAxis()
+```
+
+```{r 6uujg}
+#seurat_c2_wb_pbmc <- FindVariableFeatures(object = seurat_c2_wb_pbmc, 
+#                                     assay="RNA",
+#                                     selection.method = 'vst')
+
+#seurat_c2_wb_pbmc <- ScaleData(object = seurat_c2_wb_pbmc, 
+#                          features = VariableFeatures(object = seurat_c2_wb_pbmc), 
+#                          vars.to.regress = c("nCount_RNA"))
+
+#seurat_c2_wb_pbmc <- RunPCA(object = seurat_c2_wb_pbmc, features = VariableFeatures(object = seurat_c2_wb_pbmc), verbose = FALSE)
+
+#seurat_c2_wb_pbmc <- RunUMAP(seurat_c2_wb_pbmc, reduction.use = "pca", dims = 1:30, seed.use = 42)
+#seurat_c2_wb_pbmc <- FindNeighbors(object = seurat_c2_wb_pbmc, dims = 1:30, reduction="pca", force.recalc = TRUE)
+#seurat_c2_wb_pbmc <- FindClusters(object = seurat_c2_wb_pbmc, resolution = 0.8, algorithm = 1)
+
+DimPlot(
+    object = data$c2_wb_pbmc, 
+    reduction = 'umap', 
+    label = T, 
+    group.by = "RNA_snn_res.0.8", cols=color_clusters
+)+NoLegend()
+```
+
+```{r iouy7}
+DimPlot(
+    object = data$c2_wb_pbmc, 
+    reduction = 'umap', 
+    label = T, 
+    group.by = "blueprint.labels", cols=singleR_colors
+)+NoLegend()
+```
+
+```{r yo6t8}
+#cluster_naming_res.0.8 <- data.frame(clusters=c(0:24),
+#                                     type = c("Neutrophils_1", #0,
+#                                              "Neutrophils_2", #1
+#                                              "CD4_T_cells_1", #2
+#                                              "CD14_Monocytes_1", #3
+#                                              "Neutrophils_3", #4
+#                                              "CD8_T_cells", # 5
+#                                              "NK_cells", #6
+#                                              "B_cells_1", #7
+#                                              "Neutrophils_4", #8
+#                                              "Megakaryocytes", #9
+#                                              "CD14_Monocytes_2", #10
+#                                              "Mixed_cells", #11
+#                                              "Immature Neutrophils_1", #12
+#                                              "CD4_T_cells_2", #13
+#                                              "CD16_Monocytes", #14
+#                                              "Immature Neutrophils_2", #15
+#                                              "CD4_T_cells_3", #16
+#                                              "Eosinophils", #17
+#                                              "CD14_Monocytes_3", #18
+#                                              "Plasmablast", #19
+#                                              "Prol. cells", #20
+#                                              "mDC", #21
+#                                              "B_cells_2", #22
+#                                              "pDC", #23
+#                                              "CD34+ GATA2+ cells" #24
+#                                     ),
+#                                     new.order = c(0,1,12,7,3,11,16,17,3,20,8,24,4,13,10,5,14,6,9,19,15,21,18,22,23),
+#                                     color = c("#638B83", # Neutrophils_1
+#                                               "#3b534e", # Neutrophils_2
+#                                               "#DE342F", # CD4_T_cell_1
+#                                               "#ba7bcf", # CD14_Monocytes_1
+#                                               "#82a29b", # Neutrophils_3
+#                                               "#3F81B9", # CD8_T_cells
+#                                               "#1F405C", # NK cells
+#                                               "#A34F23", # B_cells_1
+#                                               "#b1c5c1", # Neutrophils_4
+#                                               "#E7C595", # Megakaryocytes
+#                                               "#9d43bb", # CD14_Monocytes_2
+#                                               "#D6E9D8", # Mixed_cells
+#                                               "#A6E9DB", # Immature Neutrophils_1
+#                                               "#e7706d", # CD4_T_cell_2
+#                                               "#DB8A0F", # Non-classical Monocytes
+#                                               "#84baaf", # Immature Neutrophils_2
+#                                               "#a14e4c", # CD4_T_cell_3
+#                                               "#425d57", # Eosinophils
+#                                               "#e1c6ea", # CD14_Monocytes_3
+#                                               "#F2895E", # Plasmablasts
+#                                               "#6FD6E8", # Prol. cells
+#                                               "#FBD64A", # mDC
+#                                               "#be8365", # B_cells_2
+#                                               "#B4DC49", # pDC
+#                                               "#4CA64C" # CD34+ GATA2+ cells
+#                                     ), 
+#                                     stringsAsFactors = FALSE)
+
+#idx <- match(seurat_c2_wb_pbmc$RNA_snn_res.0.8, cluster_naming_res.0.8$cluster)
+#seurat_c2_wb_pbmc[['cluster_labels_res.0.8']] <- cluster_naming_res.0.8$type[idx]
+#seurat_c2_wb_pbmc[['new.order']] <- cluster_naming_res.0.8$new.order[idx]
+
+#seurat_c2_wb_pbmc$cluster_labels_res.0.8 <- factor(seurat_c2_wb_pbmc$cluster_labels_res.0.8, levels=c("Neutrophils_1", #0
+#                                                                                     "Neutrophils_2", #1
+#                                                                                     "Neutrophils_3", #2
+#                                                                                     "Neutrophils_4", #3
+#                                                                                     "Immature Neutrophils_1", #4
+#                                                                                     "Immature Neutrophils_2", #5
+#                                                                                     "Eosinophils", #6
+#                                                                                     "CD14_Monocytes_1", #7
+#                                                                                     "CD14_Monocytes_2", #8
+#                                                                                     "CD14_Monocytes_3", #9
+#                                                                                     "CD16_Monocytes", #10
+#                                                                                     "CD8_T_cells", # 11
+#                                                                                     "CD4_T_cells_1", #12
+#                                                                                     "CD4_T_cells_2", #13
+#                                                                                     "CD4_T_cells_3", #14
+#                                                                                     "Prol. cells", #15
+#                                                                                     "NK_cells", # 16
+#                                                                                     "B_cells_1", # 17
+#                                                                                     "B_cells_2", # 18
+#                                                                                     "Plasmablast", # 19
+#                                                                                     "Megakaryocytes", # 20
+#                                                                                     "mDC", # 21
+#                                                                                     "pDC", # 22
+#                                                                                     "CD34+ GATA2+ cells", # 23
+#                                                                                     "Mixed_cells")) #24
+
+DimPlot(
+    data$c2_wb_pbmc,
+    group.by = "cluster_labels_res.0.8",
+    label=TRUE,
+    cols = color_clusters
+)
+```
+
+```{r fjt1t}
+seurat_c2_neutrophils<-subset(
+    data$c2_wb_pbmc, 
+    subset=cluster_labels_res.0.8 %in% c(
+        "Neutrophils_1",
+        "Neutrophils_2",
+        "Neutrophils_3",
+        "Neutrophils_4",
+        "Immature Neutrophils_1",
+        "Immature Neutrophils_2"
+    ) &  cells %in% c("Whole_blood"), 
+    invert=F
+)
+
+DimPlot(
+    seurat_c2_neutrophils, 
+    group.by = "cluster_labels_res.0.8"
+)
+```
+
+```{r}
+#seurat.list <- SplitObject(seurat_c2_neutrophils, split.by = "experiment")
+#
+#for (i in 1:length(seurat.list)) {
+#    seurat.list[[i]] <- NormalizeData(seurat.list[[i]], verbose = FALSE)
+#    seurat.list[[i]] <- FindVariableFeatures(seurat.list[[i]], selection.method = "vst", verbose = FALSE)
+#}
+
+#seurat.anchors <- FindIntegrationAnchors(object.list = seurat.list, dims = 1:30)
+
+#seurat_c2_neutrophils.integrated <- IntegrateData(anchorset = seurat.anchors, dims = 1:30)
+```
+
+```{r}
+#DefaultAssay(seurat_c2_neutrophils.integrated) <- "integrated"
+#
+#seurat_c2_neutrophils.integrated <- ScaleData(seurat_c2_neutrophils.integrated,
+#                                              features = VariableFeatures(object = seurat_c2_neutrophils.integrated), 
+#                                              vars.to.regress = c("nCount_RNA"), 
+#                                              verbose = FALSE)
+
+#seurat_c2_neutrophils.integrated <- RunPCA(seurat_c2_neutrophils.integrated, npcs = 40, verbose = FALSE)
+
+#seurat_c2_neutrophils.integrated <- RunUMAP(seurat_c2_neutrophils.integrated, reduction = "pca", dims = 1:12)
+
+DimPlot(
+    object = data$c2_neutrophils_integrated, 
+    reduction = 'umap',
+    label = TRUE,
+    group.by = "experiment",
+    cols=color_clusters
+) + NoLegend()
+```
+
+```{r}
+#seurat_c2_neutrophils.integrated <- FindNeighbors(object = seurat_c2_neutrophils.integrated,
+#                                                  assay = "integrated",
+#                                                  dims = 1:12, 
+#                                                  reduction="pca", 
+#                                                  force.recalc = TRUE)
+
+#seurat_c2_neutrophils.integrated <- FindClusters(object = seurat_c2_neutrophils.integrated, 
+#                                                 resolution = 0.3, 
+#                                                 algorithm = 1)
+
+colors_res_03<-c("0"="#377EB8","1"="#E41A1C","2"="#4DAF4A","3"="#7AB4D5","4"="#D7E8F1","5"="grey","6"="#984EA3","7"="#F781BF","8"="#FF7F00")
+
+DimPlot(
+    data$c2_neutrophils_integrated,
+    group.by = "integrated_snn_res.0.3", 
+    cols = colors_res_03, label = TRUE
+)
+```
