@@ -19,5 +19,7 @@ renv::install(c(
   'bioc::fgsea',
   'DT',
   'shiny',
-  'bioc::GSVA'
+  'bioc::GSVA',
+  'Seurat',
+  'bioc::SingleR'
 ))
