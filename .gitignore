@@ -1,3 +1,4 @@
 .cache
 renv/
 env
+*.html
