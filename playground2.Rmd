@@ -1,0 +1,186 @@
+---
+title: ""
+output: html_document
+---
+
+```{r q65nn, echo=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+library(data.table)
+library(magrittr)
+
+#library(fgread)
+library(Seurat)
+library(SingleR)
+library(ggplot2)
+library(RColorBrewer)
+source('_data.R')
+```
+
+```{r wrxw4}
+options(repr.plot.width=10, repr.plot.height=10)
+
+color_clusters<-c(
+    brewer.pal(n = 9,name = "Set1"),
+    brewer.pal(n = 8,name = "Set2"),
+    brewer.pal(n = 12,name = "Set3"),
+    brewer.pal(n = 12,name = "Paired"),
+    brewer.pal(n = 9,name = "Pastel1"),
+    brewer.pal(n = 8,name = "Pastel2"),
+    brewer.pal(n = 8,name = "Accent")
+)
+
+singleR_colors <- c(
+    "T cells" = "#776fb2",
+    "T_cells" = "#776fb2",
+    "CD4+ T-cells (naive)" = "#cecce2",
+    "CD4+ T-cells" = "#cecce2",
+    "CD4+ T cells" = "#cecce2",
+    "T cells, CD4+" = "#cecce2",
+    "CD4+/CD45RA+/CD25- Naive T" = "#cecce2",
+    "CD4+ T Helper2" = "#cecce2",
+    "CD4+ Tcm" = "#cecce2",
+    "CD4+/CD45RO+ Memory" = "#cecce2",
+    "CD4+ memory T-cells" = "#cecce2",
+    "CD4+ Tem" = "#cecce2",
+
+    "CD8+ T-cells (naive)" = "#422483",
+    "CD8+/CD45RA+ Naive Cytotoxic" = "#422483",
+    "CD8+ T-cells" = "#422483",
+    "CD8+ T cells" = "#422483",
+    "T cells, CD8+" = "#422483",
+    "CD8+ Tcm" = "#422483",
+    "CD8+ Cytotoxic T" = "#422483",
+    "CD8+ Tem" = "#422483",
+
+    "Treg cells" = "#004c9d",
+    "CD4+/CD25 T Reg" = "#004c9d",
+    "regulatory T-cells" = "#004c9d",
+
+    "NKT cells" = "#684495",
+    "NK T cells" = "#684495",
+    "NK cells" = "#338eb0",
+    "NK_cell" = "#338eb0",
+    "CD56+ NK" = "#338eb0",
+
+    "ILCs" = "#d9dada",
+
+    "naive B-cells" = "#00963f",
+    "B-cells" = "#00963f",
+    "B_cell" = "#00963f",
+    "B cells" = "#00963f",
+    "CD19+ B" = "#00963f",
+    "Pre-B_cell_CD34-" = "#00961a" ,
+    "Pro-B_cell_CD34+" = "#00961a",
+    "memory B-cells" = "#32ab6d",
+    "class-switched memory B-cells" = "#7dc29e",
+    "Plasma cells" = "#d5e7dd",
+
+    "BM" = "#b3a930",
+    "BM & Prog." = "#b3a930",
+    "Progenitors" = "#b3a930", 
+    "HSC" = "#b3a930",
+    "HSCs" = "#b3a930",
+    "HSC_-G-CSF" = "#b3a930",
+    "HSC_CD34+" = "#b3a930",
+    "CD34+ Precursors" = "#b3a930",
+    "MPP" = "#dfd200",
+    "CLP" = "#ffed00",
+    "CMP" = "#fdef6d",
+    "CMPs" = "#fdef6d",
+    "GMP" = "#faf3a8",
+    "GMPs" = "#faf3a8",
+    "MEP" = "#e7bd00",
+    "MEPs" = "#e7bd00",
+    "Megakaryocytes" = "#efd873",
+
+    "DC" = "#ef7c00",
+    "Dendritic" = "#ef7c00",
+    "Dendritic cells" = "#ef7c00",
+
+    "Monocyte (CD16-)" = "#e6330f",
+    "Monocyte (CD16+)" = "#ea5552",
+    "Monocyte (CD14+)" = "#f4a5a5",
+    "Monocytes" = "#f4a5a5",
+    "Monocyte" = "#f4a5a5",
+    "CD14+ Monocyte" = "#f4a5a5",
+
+    "Pro-Myelocyte" = "#001816",
+    "Myelocyte" = "#00312C",
+    "Granulocytes" = "#006358",
+    "Eosinophils" = "#00af9d",
+    "Neutrophils" = "#87cbbe",
+    "Basophils" = "#cae6e4",
+    "Macrophages" = "#b41909",
+    "Macrophage" = "#b41909",
+    "Erythrocytes" = "#bb79b2",
+    "Erythroblast" = "#bb79b2",
+    "Erythroid cells" = "#bb79b2",
+    "Platelets" = "#2a3937",
+
+    "Adipocytes" = "#e2a9cd",
+    "Fibroblasts" = "#be348b",
+    "Endothelial cells" = "#7d2685",
+    "Endothelial_cells" = "#7d2685",
+    "mv Endothelial cells" = "#632282",
+    "Myocytes"="#A70000",
+    "Smooth_muscle_cells"="#A70000",
+    "Chondrocytes"="#F0F7DA",
+    "Epithelial_cells"="#A67C00",
+    "Neurons"="#63CDE3"
+)
+```
+
+```{r 6uujg}
+#seurat_c2_wb_pbmc <- FindVariableFeatures(object = seurat_c2_wb_pbmc, 
+#                                     assay="RNA",
+#                                     selection.method = 'vst')
+
+#seurat_c2_wb_pbmc <- ScaleData(object = seurat_c2_wb_pbmc, 
+#                          features = VariableFeatures(object = seurat_c2_wb_pbmc), 
+#                          vars.to.regress = c("nCount_RNA"))
+
+#seurat_c2_wb_pbmc <- RunPCA(object = seurat_c2_wb_pbmc, features = VariableFeatures(object = seurat_c2_wb_pbmc), verbose = FALSE)
+
+#seurat_c2_wb_pbmc <- RunUMAP(seurat_c2_wb_pbmc, reduction.use = "pca", dims = 1:30, seed.use = 42)
+#seurat_c2_wb_pbmc <- FindNeighbors(object = seurat_c2_wb_pbmc, dims = 1:30, reduction="pca", force.recalc = TRUE)
+#seurat_c2_wb_pbmc <- FindClusters(object = seurat_c2_wb_pbmc, resolution = 0.8, algorithm = 1)
+
+DimPlot(
+    object = data$c2_wb_pbmc, 
+    reduction = 'umap', 
+    label = T, 
+    group.by = "RNA_snn_res.0.8", cols=color_clusters
+)+NoLegend()
+```
+
+```{r iouy7}
+DimPlot(
+    object = data$c2_wb_pbmc, 
+    reduction = 'umap', 
+    label = T, 
+    group.by = "blueprint.labels", cols=singleR_colors
+)+NoLegend()
+```
+
+```{r dv8sl}
+RidgePlot(
+    data$c2_wb_pbmc, features = c('C5AR1'), 
+    ncol = 1, 
+    group.by = "blueprint.labels", cols=singleR_colors
+)+NoLegend()
+```
+
+```{r dv8sl}
+RidgePlot(
+    data$c2_wb_pbmc, features = c('C5AR2'), 
+    ncol = 1, 
+    group.by = "blueprint.labels", cols=singleR_colors
+)+NoLegend()
+```
+
+```{r 5oewz}
+FeaturePlot(
+    data$c2_wb_pbmc,
+    features = c('C5AR1', 'C5AR2')
+)
+```

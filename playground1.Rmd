@@ -13,30 +13,7 @@ library(Seurat)
 library(SingleR)
 library(ggplot2)
 library(RColorBrewer)
-
-source('common/module.R')
-load.module('common')
-```
-
-```{r zdt2p, echo=FALSE}
-config <- list(
-    cache='.cache'
-)
-
-data <- obj() %>%
-    lazy_prop(c2_wb_pbmc, {
-        UpdateSeuratObject(readRDS(file.path(
-            config$cache, 
-            'download/seurat_COVID19_freshWB-PBMC_cohort2_rhapsody_jonas_FG_2020-08-18.rds'
-        )))
-    }) %>%
-
-    lazy_prop(c2_neutrophils_integrated, {
-        UpdateSeuratObject(readRDS(file.path(
-            config$cache, 
-            'download/seurat_COVID19_Neutrophils_cohort2_rhapsody_jonas_FG_2020-08-18.rds'
-        )))
-    })
+source('_data.R')
 ```
 
 ```{r wrxw4}
