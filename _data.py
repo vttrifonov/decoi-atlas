@@ -4,6 +4,7 @@ if __name__ == '__main__':
 
 # %%
 import xarray as xa
+import numpy as np
 from ._helpers import config
 from .common.caching import compose, lazy, XArrayCache
 
@@ -22,6 +23,7 @@ class _data:
         x1 = R('data$c2_wb_pbmc@meta.data')
         x1 = pandas2ri.rpy2py(x1)
         x1.index.names = ['cell_id']
+        x1 = x1.where(x1!=R('NA_character_')[0], '')
         x1 = x1.to_xarray()
         x1 = x1.rename({
             k: 'cell_'+k for k in x1.keys()
@@ -41,14 +43,16 @@ class _data:
         ))
         x2 = [numpy2ri.rpy2py(x) for _, x in x2.items()]
         x2 = xa.DataArray(
-            sparse.GCXS((x2[2], x2[0], x2[1]), shape=(len(x2[3]), len(x2[4]))),
+            sparse.GCXS(
+                (x2[2], x2[0], x2[1]), 
+                shape=(len(x2[3]), len(x2[4])),
+                compressed_axes=(1,)
+            ),
             [('feature_id', x2[3]), ('cell_id', x2[4])],
             name='counts'
         )
 
-        x4 = xa.merge([
-            x2.to_dataset(), x1, x3
-        ], join='inner')
+        x4 = xa.merge([x1, x2, x3], join='inner')
 
         return x4
 
