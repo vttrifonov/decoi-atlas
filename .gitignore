@@ -2,3 +2,5 @@
 renv/
 env
 *.html
+__pycache__
+decoi_atlas
