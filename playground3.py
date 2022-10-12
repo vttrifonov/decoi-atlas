@@ -101,7 +101,7 @@ x3 = x.rpk.copy()
 x3.data = x3.data.asformat('gcxs', compressed_axes=(0,))
 x2 = xa.merge([x2.rename('c5ar1'), x3], join='inner')
 
-def OLS(A, B):
+def ols(A, B):
     Q, R = np.linalg.qr(A)
     nz = ~np.isclose(np.diag(R), 0)
     Q, R = Q[:,nz], R[np.ix_(nz, nz)]
@@ -112,18 +112,22 @@ def OLS(A, B):
     X[nz,:] = x
     return X, RSS, Q.shape[1]
 
-A, B = x2.c5ar1.data, x2.rpk.data
-X, RSS1, rk1 = OLS(A, B)
-_, RSS2, rk2 = OLS(np.ones((B.shape[0],1)), B)
+A1, A2, B = x2.c5ar1.data, np.ones((x2.sizes['cell_id'], 1)), x2.rpk.data
+X, RSS1, rk1 = ols(A1, B)
+_, RSS2, rk2 = ols(A2, B)
 r2 = 1-RSS1/RSS2
-p = beta.sf(r2, (rk1-rk2)/2, (B.shape[0]-rk2)/2)
+df1, df2 = B.shape[0]-rk1, B.shape[0]-rk2
+p = beta.sf(r2, (df2-df1)/2, df1/2)
 
-z = pd.Series(p).sort_values()
-z[z>0.3]
+z = pd.Series(r2).sort_values(ascending=False)
+z[z>0.1]
 
-(1-RSS1/RSS2)[23784]
-z1 = sm.OLS(B[:,[23784]].todense(), A).fit()
-z1.rsquared
+
+r2[3345]
+z1 = sm.OLS(B[:,[3345]].todense(), A).fit()
+z1.fvalue
+X[:,3345]
+((df1*r2)/((df2-df1)*(1-r2)))[3345]
 
 
 x4 = xa.apply_ufunc(
