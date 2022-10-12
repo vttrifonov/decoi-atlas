@@ -112,22 +112,21 @@ def ols(A, B):
     X[nz,:] = x
     return X, RSS, Q.shape[1]
 
-A1, A2, B = x2.c5ar1.data, np.ones((x2.sizes['cell_id'], 1)), x2.rpk.data
-X, RSS1, rk1 = ols(A1, B)
-_, RSS2, rk2 = ols(A2, B)
-r2 = 1-RSS1/RSS2
+A1, A2, B = np.ones((x2.sizes['cell_id'], 1)), x2.c5ar1.data, x2.rpk.data
+_, RSS1, rk1 = ols(A1, B)
+X, RSS2, rk2 = ols(A2, B)
+r2 = 1-RSS2/RSS1
 df1, df2 = B.shape[0]-rk1, B.shape[0]-rk2
-p = beta.sf(r2, (df2-df1)/2, df1/2)
+p = beta.sf(r2, (df1-df2)/2, df2/2)
 
 z = pd.Series(r2).sort_values(ascending=False)
 z[z>0.1]
 
-
 r2[3345]
-z1 = sm.OLS(B[:,[3345]].todense(), A).fit()
+z1 = sm.OLS(B[:,[3345]].todense(), A2).fit()
 z1.fvalue
 X[:,3345]
-((df1*r2)/((df2-df1)*(1-r2)))[3345]
+((df2*r2)/((df1-df2)*(1-r2)))[3345]
 
 
 x4 = xa.apply_ufunc(
