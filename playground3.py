@@ -20,7 +20,6 @@ x['rpk'] = 1e4*x.rpk/x.total
 import statsmodels.api as sm
 x2 = x.sel(feature_id=['C5AR1', 'C5AR2'])
 x2 = x2.sel(cell_id=x2.cell_diagnosis!='')
-x2 = x2.sel(cell_id=x2.cell_cells=='PBMC')
 x2 = x2.sel(cell_id=~x2['cell_blueprint.labels'].isin(['Macrophages', 'Erythrocytes']))
 x2 = x2.todense()
 x2 = xa.merge([
@@ -87,6 +86,60 @@ x3 = sm.stats.Table.from_data(x3[['cell_diagnosis', 'C5AR1>0']])
 print(
     plot_table(x3)+labs(x='', title='Neutrophils')
 )
+
+# %%
+import statsmodels.api as sm
+from scipy.stats import beta
+x2 = x.sel(feature_id=['C5AR1'])
+x2 = x2.sel(cell_id=x2.cell_diagnosis!='')
+x2 = x2.sel(cell_id=x2['cell_blueprint.labels']=='Neutrophils')
+x2 = (x2.counts>0).todense()
+x2 = x2.squeeze('feature_id').drop('feature_id')
+x2 = pd.get_dummies(x2.to_series()).to_xarray().to_array(dim='coef')
+
+x3 = x.rpk.copy()
+x3.data = x3.data.asformat('gcxs', compressed_axes=(0,))
+x2 = xa.merge([x2.rename('c5ar1'), x3], join='inner')
+
+def OLS(A, B):
+    Q, R = np.linalg.qr(A)
+    nz = ~np.isclose(np.diag(R), 0)
+    Q, R = Q[:,nz], R[np.ix_(nz, nz)]
+    x = (Q.T) @ B
+    RSS = (B**2).sum(axis=0)-(x**2).sum(axis=0)
+    x = np.linalg.inv(R) @ x
+    X = np.full((A.shape[1], B.shape[1]), np.nan)
+    X[nz,:] = x
+    return X, RSS, Q.shape[1]
+
+A, B = x2.c5ar1.data, x2.rpk.data
+X, RSS1, rk1 = OLS(A, B)
+_, RSS2, rk2 = OLS(np.ones((B.shape[0],1)), B)
+r2 = 1-RSS1/RSS2
+p = beta.sf(r2, (rk1-rk2)/2, (B.shape[0]-rk2)/2)
+
+z = pd.Series(p).sort_values()
+z[z>0.3]
+
+(1-RSS1/RSS2)[23784]
+z1 = sm.OLS(B[:,[23784]].todense(), A).fit()
+z1.rsquared
+
+
+x4 = xa.apply_ufunc(
+    OLS, x2.c5ar1, x2.rpk,
+    input_core_dims=[['cell_id', 'coef'], ['cell_id', 'feature_id']],
+    output_core_dims=[['coef', 'feature_id'], ['feature_id']]
+)
+
+x4 = x2.c5ar1.data
+x4 = np.linalg.qr(x4)
+x5 = x2.rpk.data
+x5 = (x4[0].T) @ x5
+x5 = np.linalg.inv(x4[1]) @ x5
+
+
+
 
 
 # %%
