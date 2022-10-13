@@ -304,6 +304,8 @@ x6 = x6.groupby('gene').feature_id.apply(lambda x: ','.join(x)).rename('symbol')
 x6 = x6.to_xarray()
 
 # %%
+x8 = analysis1.gsea
+
 x9 = x8[['sig', 'ES', 'NES', 'padj']]
 x9 = x9.to_dataframe().reset_index()
 x9 = x9[x9.padj<0.1]
@@ -314,8 +316,7 @@ x9 = x9.sort_values('padj')
 x10 = x8.sel(sig='HALLMARK_INTERFERON_GAMMA_RESPONSE')
 x10 = x10.sel(cell_diagnosis='COVID-19, severe')
 x10 = x10.sel(gene=(x10.leadingEdge==1).todense())
-x10 = x7.t.sel(cell_diagnosis=x10.cell_diagnosis.data).\
-    sel(gene=x10.gene.data).\
-    todense()
-x10 = xa.merge([x10, x6], join='inner')
+x10 = x10.drop_dims('feature_id')
+x10 = x10[['t', 'feature_ids']].todense()
 x10 = x10.to_dataframe().reset_index()
+# %%
