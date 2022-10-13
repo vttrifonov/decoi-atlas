@@ -3,9 +3,7 @@ import numpy as np
 import pandas as pd
 import xarray as xa
 from plotnine import *
-import matplotlib.pyplot as plt
 from decoi_atlas._data import data
-import decoi_atlas.common.helpers
 
 # %%
 x = data.c2_wb_pbmc
@@ -89,60 +87,105 @@ print(
 
 # %%
 import statsmodels.api as sm
+from statsmodels.stats.multitest import multipletests
 from scipy.stats import beta
-x2 = x.sel(feature_id=['C5AR1'])
-x2 = x2.sel(cell_id=x2.cell_diagnosis!='')
-x2 = x2.sel(cell_id=x2['cell_blueprint.labels']=='Neutrophils')
-x2 = (x2.counts>0).todense()
-x2 = x2.squeeze('feature_id').drop('feature_id')
-x2 = pd.get_dummies(x2.to_series()).to_xarray().to_array(dim='coef')
-
-x3 = x.rpk.copy()
-x3.data = x3.data.asformat('gcxs', compressed_axes=(0,))
-x2 = xa.merge([x2.rename('c5ar1'), x3], join='inner')
 
 def ols(A, B):
     Q, R = np.linalg.qr(A)
     nz = ~np.isclose(np.diag(R), 0)
     Q, R = Q[:,nz], R[np.ix_(nz, nz)]
     x = (Q.T) @ B
-    RSS = (B**2).sum(axis=0)-(x**2).sum(axis=0)
+    SS = (x**2).sum(axis=0)
     x = np.linalg.inv(R) @ x
     X = np.full((A.shape[1], B.shape[1]), np.nan)
     X[nz,:] = x
-    return X, RSS, Q.shape[1]
+    return X, SS, Q.shape[1]
 
-A1, A2, B = np.ones((x2.sizes['cell_id'], 1)), x2.c5ar1.data, x2.rpk.data
-_, RSS1, rk1 = ols(A1, B)
-X, RSS2, rk2 = ols(A2, B)
-r2 = 1-RSS2/RSS1
-df1, df2 = B.shape[0]-rk1, B.shape[0]-rk2
-p = beta.sf(r2, (df1-df2)/2, df2/2)
+def anova(A1, A2, B):
+    _, SS1, rk1 = ols(A1, B)
+    X, SS2, rk2 = ols(A2, B)
+    r2 = (SS2-SS1)/((B**2).sum(axis=0)-SS1)
+    df1, df2 = rk2-rk1, B.shape[0]-rk2
+    p = beta.sf(r2, df1/2, df2/2)
+    return X, r2, p, df1, df2
 
-z = pd.Series(r2).sort_values(ascending=False)
-z[z>0.1]
+# %%
+x2 = x.sel(feature_id=['C5AR1'])
+x2 = x2.sel(cell_id=x2.cell_diagnosis!='')
+x2 = x2.sel(cell_id=x2['cell_blueprint.labels']=='Neutrophils')
+x2 = xa.merge([
+    (x2.counts>0).todense(),
+    x2.cell_diagnosis
+])
+x2 = x2.squeeze('feature_id').drop('feature_id')
+x2 = xa.merge([
+    x2.cell_diagnosis,
+    pd.get_dummies(x2.counts.to_series()).to_xarray().\
+        to_array(dim='coef').rename('c5ar1')
+])
+x2.c5ar1[0,:] = 1
 
-r2[3345]
-z1 = sm.OLS(B[:,[3345]].todense(), A2).fit()
-z1.fvalue
-X[:,3345]
-((df2*r2)/((df1-df2)*(1-r2)))[3345]
+x3 = x.rpk.copy()
+x3.data = x3.data.asformat('gcxs', compressed_axes=(0,))
+x2 = xa.merge([x2, x3], join='inner')
 
+def _(x2):
+    x4 = xa.apply_ufunc(
+            anova, xa.DataArray(1, [x2.cell_id, ('coef1', [0])]), x2.c5ar1, x2.rpk,
+            input_core_dims=[['cell_id', 'coef1'], ['cell_id', 'coef'], ['cell_id', 'feature_id']],
+            output_core_dims=[['coef', 'feature_id']]+[['feature_id']]*2+[[]]*2
+    )
+    x4 = [x.rename(k) for x, k in zip(x4, ['X', 'r2', 'p', 'df1', 'df2'])]
+    x4 = xa.merge(x4)
+    x5 = x4.p.data
+    x5[~np.isnan(x5)] = multipletests(x5[~np.isnan(x5)], method='fdr_bh')[1]
+    x4['q'] = 'feature_id', x5
+    return x4
 
-x4 = xa.apply_ufunc(
-    OLS, x2.c5ar1, x2.rpk,
-    input_core_dims=[['cell_id', 'coef'], ['cell_id', 'feature_id']],
-    output_core_dims=[['coef', 'feature_id'], ['feature_id']]
+x4 = x2.groupby('cell_diagnosis').apply(_)
+    
+# %%
+import sparse
+from decoi_atlas.sigs import sigs
+from decoi_atlas.sigs.fit import fit_gsea
+from decoi_atlas.sigs.entrez import symbol_entrez
+
+x4['t'] = ('cell_diagnosis', 'feature_id'), np.where(x4.q<0.1, x4.X.sel(coef=True), 0)
+
+x6 = x4.feature_id.to_series()
+x6 = symbol_entrez(x6)
+x6 = x6.rename(
+    symbol='feature_id',
+    Entrez_Gene_ID = 'gene'
 )
+x7 = xa.apply_ufunc(
+    np.matmul, x6, x4.t,
+    input_core_dims=[['gene', 'feature_id'], ['feature_id', 'cell_diagnosis']],
+    output_core_dims=[['gene', 'cell_diagnosis']],
+    join='inner'
+)
+x7 = x7/x6.sum(dim='feature_id').todense()
+x7 = xa.merge([x7.rename('t'), sigs.all1.rename('s')], join='inner')
+x7.t.data = sparse.COO(x7.t.data)
+x8 = fit_gsea(x7.t, x7.s, 1e5)
 
-x4 = x2.c5ar1.data
-x4 = np.linalg.qr(x4)
-x5 = x2.rpk.data
-x5 = (x4[0].T) @ x5
-x5 = np.linalg.inv(x4[1]) @ x5
+x4 = x6.to_series_sparse().reset_index()
+x4 = x4.groupby('gene').feature_id.apply(lambda x: ','.join(x)).rename('symbol')
+x4 = x4.to_xarray()
 
+# %%
+x9 = x8[['sig', 'ES', 'NES', 'padj']]
+x9 = x9.to_dataframe().reset_index()
+x9 = x9[x9.padj<0.1]
+x9 = x9[x9.ES>0]
+x9 = x9.sort_values('padj')
 
-
-
-
+x10 = x8.sel(sig='HALLMARK_INTERFERON_GAMMA_RESPONSE')
+x10 = x10.sel(cell_diagnosis='COVID-19, severe')
+x10 = x10.sel(gene=(x10.leadingEdge==1).todense())
+x10 = x7.t.sel(cell_diagnosis=x10.cell_diagnosis.data).\
+    sel(gene=x10.gene.data).\
+    todense()
+x10 = xa.merge([x10, x4], join='inner')
+x10 = x10.to_dataframe().reset_index()
 # %%
