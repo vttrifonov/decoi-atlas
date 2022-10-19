@@ -42,172 +42,11 @@ x['rpk'] = 1e4*x.rpk/x.total
 
 # %%
 class _analysis:
-    @compose(property, lazy)
+    @property
     def data(self):
         x2 = x.sel(feature_id='C5AR1').drop('feature_id').todense()
         x2 = x2.sel(cell_id=x2.cell_diagnosis!='')
         x2['rpk'] = np.log1p(x2.rpk)
-        x2 = xa.merge([
-            x2.cell_diagnosis,
-            x2[['rpk']].assign(
-                const=('cell_id', [1]*x2.sizes['cell_id'])
-            ).to_array('coef').rename('c5ar1')
-        ])
-
-        x3 = np.log1p(x.rpk).copy()
-        x3.data = x3.data.asformat('gcxs', compressed_axes=(0,))
-        x2 = xa.merge([x2, x3], join='inner')
-
-        return x2
-
-    @compose(property, lazy, XArrayCache())
-    def model(self):
-        def _(x2):
-            x4 = xa.apply_ufunc(
-                    anova, xa.DataArray(1, [x2.cell_id, ('coef1', [0])]), x2.c5ar1, x2.rpk,
-                    input_core_dims=[['cell_id', 'coef1'], ['cell_id', 'coef'], ['cell_id', 'feature_id']],
-                    output_core_dims=[['coef', 'feature_id']]+[['feature_id']]*2
-            )
-            x4 = [x.rename(k) for x, k in zip(x4, ['X', 'r2', 'p'])]
-            x4 = xa.merge(x4)
-            x5 = x4.p.data
-            x5[~np.isnan(x5)] = multipletests(x5[~np.isnan(x5)], method='fdr_bh')[1]
-            x4['q'] = 'feature_id', x5
-            return x4
-        x4 = self.data.groupby('cell_diagnosis').apply(_)
-        return x4
-
-    @compose(property, lazy, XArrayCache())
-    def gsea(self):
-        import sparse
-        from decoi_atlas.sigs import sigs
-        from decoi_atlas.sigs.fit import fit_gsea
-        from decoi_atlas.sigs.entrez import symbol_entrez
-
-        x4 = self.model
-
-        x6 = x4.feature_id.to_series()
-        x6 = symbol_entrez(x6)
-        x6 = x6.rename(
-            symbol='feature_id',
-            Entrez_Gene_ID = 'gene'
-        )
-        x7 = xa.DataArray(
-            np.where(x4.q<0.1, x4.X.sel(coef=True), 0),
-            [x4.cell_diagnosis, x4.feature_id]
-        )
-        x7 = xa.apply_ufunc(
-            np.matmul, x6, x7,
-            input_core_dims=[['gene', 'feature_id'], ['feature_id', 'cell_diagnosis']],
-            output_core_dims=[['gene', 'cell_diagnosis']],
-            join='inner'
-        )
-        x7 = x7/x6.sum(dim='feature_id').todense()
-        x7 = xa.merge([x7.rename('t'), sigs.all1.rename('s')], join='inner')
-        x7.t.data = sparse.COO(x7.t.data)
-        x8 = fit_gsea(x7.t, x7.s, 1e5)
-
-        x9 = x6.to_series_sparse().reset_index()
-        x9 = x9.groupby('gene').feature_id.apply(lambda x: ','.join(x)).rename('symbol')
-        x9 = x9.to_xarray().rename('feature_ids')
-
-        x8 = xa.merge([x8, x7.t, x6, x9], join='inner')
-
-        return x8
-
-# %%
-class _analysis1:
-    storage = config.cache/'playground4'/'analysis1'
-
-    @compose(property, lazy)
-    def data(self):
-        x2 = x.sel(feature_id=['C5AR1'])
-        x2 = x2.sel(cell_id=x2.cell_diagnosis!='')
-        x2 = xa.merge([
-            (x2.counts>0).todense(),
-            x2.cell_diagnosis
-        ])
-        x2 = x2.squeeze('feature_id').drop('feature_id')
-        x2 = xa.merge([
-            x2.cell_diagnosis,
-            pd.get_dummies(x2.counts.to_series()).to_xarray().\
-                to_array(dim='coef').rename('c5ar1')
-        ])
-        x2.c5ar1[0,:] = 1
-
-        x3 = x.rpk.copy()
-        x3.data = x3.data.asformat('gcxs', compressed_axes=(0,))
-        x2 = xa.merge([x2, x3], join='inner')
-        return x2
-
-    @compose(property, lazy, XArrayCache())
-    def model(self):
-        def _(x2):
-            x4 = xa.apply_ufunc(
-                    anova, xa.DataArray(1, [x2.cell_id, ('coef1', [0])]), x2.c5ar1, x2.rpk,
-                    input_core_dims=[['cell_id', 'coef1'], ['cell_id', 'coef'], ['cell_id', 'feature_id']],
-                    output_core_dims=[['coef', 'feature_id']]+[['feature_id']]*2
-            )
-            x4 = [x.rename(k) for x, k in zip(x4, ['X', 'r2', 'p'])]
-            x4 = xa.merge(x4)
-            x5 = x4.p.data
-            x5[~np.isnan(x5)] = multipletests(x5[~np.isnan(x5)], method='fdr_bh')[1]
-            x4['q'] = 'feature_id', x5
-            return x4
-
-        x4 = self.data.groupby('cell_diagnosis').apply(_)
-        return x4
-
-    @compose(property, lazy, XArrayCache())
-    def gsea(self):
-        import sparse
-        from decoi_atlas.sigs import sigs
-        from decoi_atlas.sigs.fit import fit_gsea
-        from decoi_atlas.sigs.entrez import symbol_entrez
-
-        x4 = self.model
-
-        x6 = x4.feature_id.to_series()
-        x6 = symbol_entrez(x6)
-        x6 = x6.rename(
-            symbol='feature_id',
-            Entrez_Gene_ID = 'gene'
-        )
-        x7 = xa.DataArray(
-            np.where(x4.q<0.1, x4.X.sel(coef=True), 0),
-            [x4.cell_diagnosis, x4.feature_id]
-        )
-        x7 = xa.apply_ufunc(
-            np.matmul, x6, x7,
-            input_core_dims=[['gene', 'feature_id'], ['feature_id', 'cell_diagnosis']],
-            output_core_dims=[['gene', 'cell_diagnosis']],
-            join='inner'
-        )
-        x7 = x7/x6.sum(dim='feature_id').todense()
-        x7 = xa.merge([x7.rename('t'), sigs.all1.rename('s')], join='inner')
-        x7.t.data = sparse.COO(x7.t.data)
-        x8 = fit_gsea(x7.t, x7.s, 1e5)
-
-        x9 = x6.to_series_sparse().reset_index()
-        x9 = x9.groupby('gene').feature_id.apply(lambda x: ','.join(x)).rename('symbol')
-        x9 = x9.to_xarray().rename('feature_ids')
-
-        x8 = xa.merge([x8, x7.t, x6, x9], join='inner')
-
-        return x8
-
-analysis1 = _analysis1()
-
-# %%
-class _analysis2(_analysis):
-    storage = config.cache/'playground4'/'analysis2'
-
-    @compose(property, lazy)
-    def data(self):
-        x2 = x.sel(feature_id='C5AR1').drop('feature_id').todense()
-        x2 = x2.sel(cell_id=x2.cell_diagnosis!='')
-        x2['rpk'] = np.log1p(x2.rpk)
-        x2 = x2.sel(cell_id=x2.rpk>0)
         x2 = xa.merge([
             x2.cell_diagnosis,
             x2[['rpk']].assign(
@@ -247,9 +86,24 @@ class _analysis2(_analysis):
         ])).todense()
         x3 = (x3.s-x3.m**2)**0.5
 
+        x5 = self.data[['c5ar1', 'cell_diagnosis']].sel(coef='rpk').drop('coef')
+        x5 = x5.groupby('cell_diagnosis').apply(lambda x: x.c5ar1.var(dim='cell_id'))
+
         x2 = self.model.X
-        x2 = x2.sel(coef='rpk')*x3.sel(feature_id='C5AR1')/x3
+        x2 = x2.sel(coef='rpk')*x5/x3
         return x2
+
+    @property
+    def t(self):
+        x4 = xa.merge([
+            self.model.drop('X'),
+            self.model1.rename('X')
+        ])
+        x4 = xa.DataArray(
+            np.where(x4.q<0.1, x4.X, 0),
+            [x4.cell_diagnosis, x4.feature_id]
+        )
+        return x4
 
     @compose(property, lazy, XArrayCache())
     def gsea(self):
@@ -258,20 +112,12 @@ class _analysis2(_analysis):
         from decoi_atlas.sigs.fit import fit_gsea
         from decoi_atlas.sigs.entrez import symbol_entrez
 
-        x4 = xa.merge([
-            self.model.drop('X'),
-            self.model1.rename('X')
-        ])
-
-        x6 = x4.feature_id.to_series()
+        x7 = self.t
+        x6 = x7.feature_id.to_series()
         x6 = symbol_entrez(x6)
         x6 = x6.rename(
             symbol='feature_id',
             Entrez_Gene_ID = 'gene'
-        )
-        x7 = xa.DataArray(
-            np.where(x4.q<0.1, x4.X, 0),
-            [x4.cell_diagnosis, x4.feature_id]
         )
         x7 = xa.apply_ufunc(
             np.matmul, x6, x7,
@@ -292,9 +138,32 @@ class _analysis2(_analysis):
 
         return x8
 
-analysis2 = _analysis2()
+# %%
+class _analysis1(_analysis):
+    storage = config.cache/'playground4'/'analysis1'
 
-self = analysis2
+    @compose(property, lazy)
+    def data(self):
+        x2 = super(_analysis1, self).data.copy()
+        x2.c5ar1.data[0,:] = np.where(x2.c5ar1.data[0,:]>0, 1, 0)
+        return x2
+
+analysis1 = _analysis1()
+
+self = analysis1
+
+# %%
+class _analysis2(_analysis):
+    storage = config.cache/'playground4'/'analysis2'
+
+    @compose(property, lazy)
+    def data(self):
+        x2 = super(_analysis2, self).data
+        x3 = (x2.c5ar1.sel(coef='rpk')>0).drop('coef')
+        x2 = x2.sel(cell_id=x3)
+        return x2
+
+analysis2 = _analysis2()
 
 # %%
 def plot_table(x3):
@@ -327,9 +196,8 @@ def plot_table(x3):
     )
 
 
-
 # %%
-x2 = x.sel(feature_id=['C5AR1', 'C5AR2'])
+x2 = x.sel(feature_id=['C5AR1'])
 x2 = x2.sel(cell_id=x2.cell_diagnosis!='')
 x2 = x2.todense()
 x2 = xa.merge([
@@ -344,8 +212,6 @@ x2 = xa.merge([
 ])
 x2 = x2.to_dataframe()
 x2['C5AR1>0'] = np.where(x2.counts_C5AR1>0, 'C5AR1>0', 'C5AR1=0')
-x2['C5AR2>0'] = np.where(x2.counts_C5AR2>0, 'C5AR2>0', 'C5AR2=0')
-x2['C5AR>0'] = x2['C5AR1>0']+','+x2['C5AR2>0']
 x2['cell_integrated_snn_res.0.3'] = x2['cell_integrated_snn_res.0.3'].astype('category')
 x2['rpk_C5AR1_q3'] = np.where(x2.rpk_C5AR1==0, np.nan, x2.rpk_C5AR1)
 x2['rpk_C5AR1_q3'] = pd.qcut(x2.rpk_C5AR1_q3, q=3)
