@@ -8,6 +8,7 @@ from matplotlib import colors
 import statsmodels.api as sm
 import numpy as np
 import xarray as xa
+import itables
 from ..common import helpers
 from . import analysis, analysis1, analysis2, analysis3, plot_table
 
@@ -170,8 +171,8 @@ x9 = x9[x9['padj'].min(axis=1)<0.05]
 x9 = x9[x9['size'].min(axis=1)>5]
 x9 = x9['NES']
 x9 = x9.add(-x9['control'], axis=0).assign(control=x9['control'])
+x9.columns.name=None
 x9 = x9.reset_index()
-x9
 
 # %%
 print(
@@ -187,6 +188,9 @@ print(
             midpoint=0
         )
 )
+
+# %%
+itables.show(x9, scrollY="400px", scrollCollapse=True, paging=False)
 
 # %%
 x3 = xa.merge([
@@ -228,8 +232,8 @@ x9 = x9[x9['padj'].min(axis=1)<0.05]
 x9 = x9[x9['size'].min(axis=1)>5]
 x9 = x9['NES']
 x9 = x9.add(-x9['control'], axis=0).assign(control=x9['control'])
+x9.columns.name=None
 x9 = x9.reset_index()
-x9
 
 # %%
 print(
@@ -245,5 +249,8 @@ print(
             midpoint=0
         )
 )
+
+# %%
+itables.show(x9, scrollY="400px", scrollCollapse=True, paging=False)
 
 # %%
