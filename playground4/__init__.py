@@ -80,6 +80,41 @@ class _analysis:
         return (x2, x2clust)
 
     @compose(property, lazy)
+    def clust1(self):
+        x = self.data
+        x = xa.merge([
+            x['cell_integrated_snn_res.0.3'],
+            x['umap'].to_dataset('umap_dim')
+        ])
+        x = x.to_dataframe().reset_index()
+        x = x.groupby('cell_integrated_snn_res.0.3')[['UMAP_1', 'UMAP_2']].\
+            mean().reset_index()
+        return x
+
+    @compose(property, lazy)
+    def feature_data1(self, feature_id):
+        x = self.data
+        x2 = x.sel(feature_id=feature_id)
+        x2 = x2.sel(cell_id=x2.cell_diagnosis!='')
+        x2 = x2.todense()
+        x2 = xa.merge([
+            x2[['counts', 'rpk']],
+            x2.drop_dims(['umap_dim']),
+            x2.umap.to_dataset('umap_dim'),
+        ])
+        x2 = x2.to_dataframe()
+        x2['feature>0'] = np.where(x2.counts>0, 'feature>0', 'feature=0')
+        x2['cell_integrated_snn_res.0.3'] = x2['cell_integrated_snn_res.0.3'].astype('category')
+        x2['rpk_q3'] = np.where(x2.rpk==0, np.nan, x2.rpk)
+        x2['rpk_q3'] = pd.qcut(x2.rpk_q3, q=3)
+        x1 = x2['rpk_q3'].cat.add_categories(pd.Interval(0,0))
+        x1 = x1.cat.reorder_categories(np.roll(np.array(x1.dtype.categories), 1))
+        x1 = x1.fillna(pd.Interval(0,0))
+        x2['rpk_q3'] = x1
+
+        return x2
+    
+    @compose(property, lazy)
     def data2(self):
         x = data.c2_wb_pbmc
         x['rpk'] = x.counts.copy()
