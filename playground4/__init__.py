@@ -9,9 +9,12 @@ import xarray as xa
 from plotnine import *
 
 from ..common import helpers
-from ..common.caching import compose, lazy, XArrayCache
+from ..common.caching import compose, lazy, XArrayCache, CSVCache
 from .._data import data
 from .._helpers import config
+
+# %%
+storage = config.cache/'playground4'
 
 # %%
 import statsmodels.api as sm
@@ -76,7 +79,49 @@ class _analysis:
 
         return (x2, x2clust)
 
+    @compose(property, lazy)
+    def data2(self):
+        x = data.c2_wb_pbmc
+        x['rpk'] = x.counts.copy()
+        x.rpk.data = x.rpk.data.asformat('coo')
+        x['total'] = x.rpk.sum(dim='feature_id').todense()
+        x['rpk'] = 1e4*x.rpk/x.total
+        return x
+
+    @compose(property, lazy)
+    def data3(self):
+        x = self.data2
+        x2 = x.sel(feature_id=['C5AR1'])
+        x2 = x2.sel(cell_id=x2.cell_diagnosis!='')
+        x2 = x2.todense()
+        x2 = xa.merge([
+            x2.counts.assign_coords(
+                feature_id=['counts_'+k for k in x2.feature_id.data]
+            ).to_dataset(dim='feature_id'),
+            x2.rpk.assign_coords(
+                feature_id=['rpk_'+k for k in x2.feature_id.data]
+            ).to_dataset(dim='feature_id'),
+            x2.drop_dims(['feature_id', 'umap_dim']),
+            x2.umap.to_dataset('umap_dim'),
+        ])
+        x2 = x2.to_dataframe()
+        x2['C5AR1>0'] = np.where(x2.counts_C5AR1>0, 'C5AR1>0', 'C5AR1=0')
+        x2['cell_blueprint.labels'] = x2['cell_blueprint.labels'].astype('category')
+        x2['rpk_C5AR1_q3'] = np.where(x2.rpk_C5AR1==0, np.nan, x2.rpk_C5AR1)
+        x2['rpk_C5AR1_q3'] = pd.qcut(x2.rpk_C5AR1_q3, q=3)
+        x1 = x2['rpk_C5AR1_q3'].cat.add_categories(pd.Interval(0,0))
+        x1 = x1.cat.reorder_categories(np.roll(np.array(x1.dtype.categories), 1))
+        x1 = x1.fillna(pd.Interval(0,0))
+        x2['rpk_C5AR1_q3'] = x1
+
+        x2clust = x2.groupby('cell_blueprint.labels')[['UMAP_1', 'UMAP_2']].\
+            mean().reset_index()
+
+        return x2, x2clust
+
 analysis = _analysis()
+
+self = analysis
 
 # %%
 class _c5ar1_analysis:
@@ -181,9 +226,23 @@ class _c5ar1_analysis:
         x8 = fit_gsea(x8.t, x8.s, 1e5)
         return x8
 
+    @compose(property, lazy)
+    def result(self):
+        x9 = self.gsea
+        x9 = x9[['sig','ES', 'NES', 'padj','size']]
+        x9 = x9.to_dataframe().reset_index()
+        x9 = x9.pivot_table(index='sig', columns='cell_diagnosis', values=['ES', 'NES', 'padj', 'size'])
+        x9 = x9[x9['padj'].min(axis=1)<0.05]
+        x9 = x9[x9['size'].min(axis=1)>5]
+        x9 = x9['NES']
+        x9 = x9.add(-x9['control'], axis=0).assign(control=x9['control'])
+        x9.columns.name=None
+        x9 = x9.reset_index()
+        return x9
+
 # %%
 class _analysis1(_c5ar1_analysis):
-    storage = config.cache/'playground4'/'analysis1'
+    storage = storage/'analysis1'
 
     @compose(property, lazy)
     def data(self):
@@ -195,7 +254,7 @@ analysis1 = _analysis1()
 
 # %%
 class _analysis2(_c5ar1_analysis):
-    storage = config.cache/'playground4'/'analysis2'
+    storage = storage/'analysis2'
 
     @compose(property, lazy)
     def data(self):
@@ -208,7 +267,7 @@ analysis2 = _analysis2()
 
 # %%
 class _analysis3(_c5ar1_analysis):
-    storage = config.cache/'playground4'/'analysis3'
+    storage = storage/'analysis3'
     pass
 
 analysis3 = _analysis3()
@@ -243,3 +302,22 @@ def plot_table(x3):
             )
     )
 
+# %%
+class _spotfire:
+    storage = storage/'spotfire'
+
+    @compose(property, lazy, CSVCache(ext='.csv'))
+    def result(self):
+        return pd.concat([
+            analysis1.result.assign(source='analysis1'),
+            analysis2.result.assign(source='analysis2')
+        ])
+
+spotfire = _spotfire()
+
+# %%
+if __name__ == '__main__':
+    1 == 1
+
+    # %%
+    spotfire.result

@@ -12,6 +12,50 @@ import itables
 from ..common import helpers
 from . import analysis, analysis1, analysis2, analysis3, plot_table
 
+# %% 
+x2, x2clust = analysis.data3
+print(
+    ggplot(x2)+
+        aes('UMAP_1', 'UMAP_2')+
+        geom_point(aes(color='cell_blueprint.labels'))+
+        geom_label(
+            x2clust, 
+            aes(
+                label='cell_blueprint.labels',
+                color='cell_blueprint.labels',
+            ),
+            fill=colors.to_hex(colors.to_rgb('white')+(0.8,), keep_alpha=True), 
+            size=15
+        )+
+        theme(legend_position='none')
+)
+
+print(
+    ggplot(x2)+
+        aes('UMAP_1', 'UMAP_2')+
+        geom_point(aes(fill='rpk_C5AR1_q3'), shape=1, alpha=0.5)+
+        geom_label(
+            x2clust, 
+            aes(
+                label='cell_blueprint.labels',
+                color='cell_blueprint.labels',
+            ),
+            fill=colors.to_hex(colors.to_rgb('white')+(0.8,), keep_alpha=True), 
+            size=15
+        )+
+        theme(legend_position='none')
+)
+
+x3 = sm.stats.Table.from_data(x2[['cell_blueprint.labels', 'rpk_C5AR1_q3']])
+print(
+    plot_table(x3)
+)
+
+x3 = sm.stats.Table.from_data(x2[['cell_diagnosis', 'rpk_C5AR1_q3']])
+print(
+    plot_table(x3)
+)
+
 # %%
 x2, x2clust = analysis.data1
 print(
