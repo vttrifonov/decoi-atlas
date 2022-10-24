@@ -102,6 +102,29 @@ print(
     plot_table(x3)
 )
 
+print(
+    ggplot(x2)+
+        aes('UMAP_1', 'UMAP_2')+
+        geom_point(aes(fill='cell_diagnosis'), shape=1)+
+        geom_label(
+            x2clust, 
+            aes(
+                label='cell_integrated_snn_res.0.3',
+                color='cell_integrated_snn_res.0.3',
+            ),
+            fill=colors.to_hex(colors.to_rgb('white')+(0.8,), keep_alpha=True), 
+            size=15
+        )+
+        scale_fill_manual(values=['red', 'green', 'blue'])+
+        scale_color_discrete(guide=False)
+)
+
+
+x3 = sm.stats.Table.from_data(x2[['cell_integrated_snn_res.0.3', 'cell_diagnosis']])
+print(
+    plot_table(x3)
+)
+
 # %%
 x3 = analysis3.data
 x3 = x3.sel(feature_id=['IFITM2']).todense()
