@@ -33,7 +33,8 @@ print(
 print(
     ggplot(x2)+
         aes('UMAP_1', 'UMAP_2')+
-        geom_point(aes(fill='rpk_C5AR1_q3'), shape=1, alpha=0.5)+
+        geom_point(x2[x2.rpk_C5AR1==0], color='gray', alpha=0.05)+
+        geom_point(x2[x2.rpk_C5AR1>0], aes(fill='rpk_C5AR1_q3'), shape=1, alpha=1)+
         geom_label(
             x2clust, 
             aes(
@@ -76,14 +77,9 @@ print(
 
 print(
     ggplot(x2)+
-        aes('np.clip(rpk_C5AR1, 0, 80)')+
-        geom_freqpoly(bins=200)
-)
-
-print(
-    ggplot(x2)+
         aes('UMAP_1', 'UMAP_2')+
-        geom_point(aes(fill='rpk_C5AR1_q3'), shape=1, alpha=0.5)+
+        geom_point(x2[x2.rpk_C5AR1==0], color='gray', alpha=0.05)+
+        geom_point(x2[x2.rpk_C5AR1>0], aes(fill='rpk_C5AR1_q3'), shape=1, alpha=1)+
         geom_label(
             x2clust, 
             aes(

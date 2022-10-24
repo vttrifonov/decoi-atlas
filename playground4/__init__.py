@@ -38,6 +38,15 @@ def anova(A1, A2, B):
     return X, r2, p
 
 # %%
+def quantile(x, q=3):
+    x1 = np.where(x==0, np.nan, x)
+    x1 = pd.qcut(x1, q=q)
+    x1 = x1.add_categories(pd.Interval(0,0))
+    x1 = x1.reorder_categories(np.roll(np.array(x1.dtype.categories), 1))
+    x1 = x1.fillna(pd.Interval(0,0))
+    return x1
+
+# %%
 class _analysis:
     @compose(property, lazy)
     def data(self):
@@ -91,7 +100,6 @@ class _analysis:
             mean().reset_index()
         return x
 
-    @compose(property, lazy)
     def feature_data1(self, feature_id):
         x = self.data
         x2 = x.sel(feature_id=feature_id)
