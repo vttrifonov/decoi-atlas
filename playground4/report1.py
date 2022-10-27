@@ -30,6 +30,22 @@ print(
         theme(legend_position='none')
 )
 
+x3 = x2[['cell_donor', 'cell_diagnosis']].drop_duplicates()
+print(
+    ggplot(x3)+aes('cell_diagnosis')+
+        geom_bar(aes(fill='cell_diagnosis'))+
+        labs(x='')+
+        theme(
+            legend_position='none',
+            figure_size=(6, 2)
+        )
+)
+
+x3 = sm.stats.Table.from_data(x2[['cell_blueprint.labels', 'cell_diagnosis']])
+print(
+    plot_table(x3)
+)
+
 print(
     ggplot(x2)+
         aes('UMAP_1', 'UMAP_2')+

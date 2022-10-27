@@ -53,6 +53,28 @@ x3 = x3.sel(coef='rpk')
 x3 = x3.to_dataframe().reset_index()
 x3['c5ar1_q3'] = quantile(np.expm1(x3.c5ar1), q=3)
 x3['ifitm2_q3'] = quantile(np.expm1(x3.rpk), q=3)
+x3['q3'] = x3['c5ar1_q3'].astype(str) + ':' + x3['ifitm2_q3'].astype(str)
+x3['cell_integrated_snn_res.0.3'] = x3['cell_integrated_snn_res.0.3'].astype('category')
+
+x4 = sm.stats.Table.from_data(x3[['cell_integrated_snn_res.0.3', 'q3']])
+print(
+    plot_table(x4)+
+        theme(
+            axis_text_x=element_text(angle=45, hjust=1)
+        )
+)
+
+
+# %%
+x3 = xa.merge([
+    analysis.data.drop_dims(['feature_id', 'umap_dim']),
+    analysis3.data
+], join='inner')
+x3 = x3.sel(feature_id=['IFITM2']).todense()
+x3 = x3.sel(coef='rpk')
+x3 = x3.to_dataframe().reset_index()
+x3['c5ar1_q3'] = quantile(np.expm1(x3.c5ar1), q=3)
+x3['ifitm2_q3'] = quantile(np.expm1(x3.rpk), q=3)
 x3 = x3[x3['cell_integrated_snn_res.0.3']==2]
 
 x4 = sm.stats.Table.from_data(x3[['c5ar1_q3', 'ifitm2_q3']])
