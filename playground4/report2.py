@@ -55,7 +55,29 @@ x3['c5ar1_q3'] = quantile(np.expm1(x3.c5ar1), q=3)
 x3['cd274_q3'] = quantile(np.expm1(x3.rpk), q=3)
 x3 = x3[x3['cell_integrated_snn_res.0.3']==2]
 
-x4 = sm.stats.Table.from_data(x3[['c5ar1_q3', 'cd274_q3']])
+x4 = x3[x3.cell_diagnosis=='COVID-19, severe']
+x4 = x4.merge(
+    x4.groupby('cell_diagnosis').\
+        apply(lambda x: x[['c5ar1', 'rpk']].\
+            corr().iloc[0,1]
+        ).\
+        rename('R').reset_index()
+)
+x4['R'] = 'R: ' + x4['R'].round(2).astype(str)
+print(
+    ggplot(x4)+aes('c5ar1', 'rpk')+
+        geom_point(aes(color='cell_diagnosis'))+
+        geom_smooth(method='lm')+
+        facet_grid('.~cell_diagnosis+R')+
+        labs(x='C5AR1', y='CD274')+        
+        theme(
+            figure_size=(9, 3),
+            legend_position='none'
+        ) 
+)
+
+x4 = x3[x3.cell_diagnosis=='COVID-19, severe']
+x4 = sm.stats.Table.from_data(x4[['c5ar1_q3', 'cd274_q3']])
 print(
     plot_table(x4)
 )

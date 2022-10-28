@@ -176,6 +176,7 @@ class _c5ar1_analysis:
         x2['rpk'] = np.log1p(x2.rpk)
         x2 = xa.merge([
             x2.cell_diagnosis,
+            x2['cell_integrated_snn_res.0.3'],
             x2[['rpk']].assign(
                 const=('cell_id', [1]*x2.sizes['cell_id'])
             ).to_array('coef').rename('c5ar1')
@@ -311,9 +312,23 @@ analysis2 = _analysis2()
 # %%
 class _analysis3(_c5ar1_analysis):
     storage = storage/'analysis3'
-    pass
 
 analysis3 = _analysis3()
+
+# %%
+class _analysis4(_c5ar1_analysis):
+    storage = storage/'analysis4'
+
+    @compose(property, lazy)
+    def data(self):
+        x2 = super(_analysis4, self).data
+        x2 = x2.sel(
+            cell_id=~x2['cell_integrated_snn_res.0.3'].isin([5,7,9])
+        )
+
+        return x2
+
+analysis4 = _analysis4()
 
 # %%
 def plot_table(x3):
