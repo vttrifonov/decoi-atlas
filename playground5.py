@@ -169,7 +169,6 @@ class _analysis:
 
         _gmm._split = _split1            
 
-        self = analysis
         class _gmm1(_gmm):
             storage = self.storage/'clust1'
             prev = self
@@ -177,12 +176,7 @@ class _analysis:
             @compose(property, lazy)
             def data(self):
                 return self.prev.data.log1p_rpk.todense()
-        self = _gmm1()
-        x, chunks, k = (
-            self.data, 
-            {'cell_id': 1000, 'feature_id': 1000}, 
-            self.svd_k
-        )
+
 
         return _gmm1().split
 
