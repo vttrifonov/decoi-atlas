@@ -11,7 +11,7 @@ from plotnine import *
 from ..common import helpers
 from ..common.caching import compose, lazy, XArrayCache, CSVCache
 from .._data import data
-from .._helpers import config
+from .._helpers import config, plot_table
 
 # %%
 storage = config.cache/'playground4'
@@ -331,34 +331,6 @@ class _analysis4(_c5ar1_analysis):
 analysis4 = _analysis4()
 
 # %%
-def plot_table(x3):
-    x1 = [x3.table_orig.index.name, x3.table_orig.columns.name]
-    x3 = pd.concat([
-        x3.table_orig.reset_index().\
-            melt(id_vars=x1[:1]).\
-            rename(columns={'value': 'table'}).\
-            set_index(x1),
-        x3.resid_pearson.reset_index().\
-            melt(id_vars=x1[:1]).\
-            rename(columns={'value': 'resid'}).\
-            set_index(x1),
-        x3.fittedvalues.reset_index().\
-            melt(id_vars=x1[:1]).\
-            rename(columns={'value': 'fit'}).\
-            set_index(x1)
-    ], axis=1).reset_index()
-    x3['delta'] = x3['table'].astype(str) + '\n' + x3['fit'].astype(int).astype(str)
-
-    return (
-        ggplot(x3)+
-            aes(x1[1], x1[0])+
-            geom_tile(aes(fill='resid'))+
-            geom_text(aes(label='delta'))+
-            scale_fill_gradient2(
-                low='blue', mid='white', high='red',
-                midpoint=0
-            )
-    )
 
 # %%
 class _spotfire:
