@@ -13,7 +13,7 @@ import statsmodels.api as sm
 from .common import helpers
 from .common.caching import compose, lazy, XArrayCache, CSVCache
 from ._data import data
-from ._helpers import config, plot_table
+from ._helpers import config, plot_table, quantile
 
 
 # %%
@@ -25,13 +25,19 @@ class _analysis:
         x = data.c2_neutrophils_integrated.copy()
         x1 = x.counts.copy()
         x1.data = x1.data.asformat('coo')
-        x['total'] = x1.sum(dim='feature_id').todense()
-        x1 = 1e4*x1/x.total
+        x['total_cell'] = x1.sum(dim='feature_id').todense()
+        x['total_feature'] = x1.sum(dim='cell_id').todense()
+        x = x.sel(feature_id=x['total_feature']>0)
+        x1 = 1e4*x1/x.total_cell
         x['log1p_rpk'] = np.log1p(x1)
-        x['mean'] = x.log1p_rpk.mean(dim='cell_id').todense()
+        x['mean'] = x.log1p_rpk.mean(dim='cell_id').todense()        
         x['std'] = (x.log1p_rpk**2).mean(dim='cell_id').todense()
         x['std'] = (x['std']-x['mean']**2)**0.5
-        x = x.sel(feature_id=x['mean']>0)
+
+        #x1 = x['counts'].todense()
+        #x2 = (x.total_cell/x.total_cell.sum())*x.total_feature
+        #x['resid'] = (x1-x2)/np.sqrt(x2)
+
         return x
 
     @compose(property, lazy)
@@ -41,16 +47,23 @@ class _analysis:
 
         def svd(x, chunks, k):
             x = x.chunk(chunks)
-            x = (x-x.mean(dim='cell_id'))/x.std(dim='cell_id')
-            x = x/np.sqrt(x.sizes['cell_id'])
+            x = xa.merge([
+                x.rename('mat'),
+                x.mean(dim='cell_id').rename('mean'),
+                x.std(dim='cell_id').rename('scale')
+            ])
+            x['scale'] = np.sqrt(x.sizes['cell_id'])*x.scale
+            x['scale'] = xa.where(x.scale==0, 1, x.scale)
+            x['mat'] = (x.mat-x['mean'])/x['scale']
             x = x.transpose('cell_id', 'feature_id')
-            x1 = np.isnan(x).sum(axis=0).compute()
-            x = x.sel(feature_id=x1==0)
-            svd = da.linalg.svd_compressed(x.data, k=k, n_power_iter=2)
+            svd = da.linalg.svd_compressed(
+                x.mat.data, 
+                k=k, n_power_iter=2
+            )
             rand_svd = da.linalg.svd_compressed(
                 da.apply_along_axis(
-                    np.random.permutation, 0, x.data, 
-                    dtype=x.dtype, shape=(svd[0].shape[0],)
+                    np.random.permutation, 0, x.mat.data, 
+                    dtype=x.mat.dtype, shape=(svd[0].shape[0],)
                 ),
                 k=len(svd[1]), n_power_iter=2
             )
@@ -67,6 +80,7 @@ class _analysis:
                     pc = range(len(svd[1]))
                 )
             )
+            svd = xa.merge([svd, x[['mean', 'scale']]])
             svd = svd.compute()
             return svd
 
@@ -177,7 +191,6 @@ class _analysis:
             def data(self):
                 return self.prev.data.log1p_rpk.todense()
 
-
         return _gmm1().split
 
 analysis = _analysis()
@@ -185,7 +198,136 @@ analysis = _analysis()
 self = analysis
 
 # %%
-x = xa.merge([analysis.data, analysis.gmm1.clust], join='inner')
+x = data.c2_neutrophils_integrated[['counts']]
+x = x.transpose('cell_id', 'feature_id')
+x = x.chunk({'cell_id': x.sizes['cell_id']//8, 'feature_id': x.sizes['feature_id']//4}) 
+x.counts.data = x.counts.data.map_blocks(lambda x: x.todense(), dtype=x.counts.dtype)
+
+# %%
+x1 = x.counts
+x2 = xa.Dataset()
+x2['mu'] = x1.mean(dim='cell_id')
+x2['s2'] = (x1**2).mean(dim='cell_id')
+x2['s2'] = x2['s2']-x2['mu']**2
+x2 = x2.compute()
+
+from skmisc.loess import loess
+x2['d'] = (x2['mu']**2)/(x2['s2']-x2['mu'])
+
+x4 = np.clip(x2['mu'], 0, 2.2)
+x3 = loess(x4, np.clip(x2['d'], 0, 10))
+x3.fit()
+x2['e'] = 'feature_id', x3.predict(x4).values
+x2 = x2.to_dataframe()
+
+# %%
+
+print(
+    ggplot(x2)+
+        aes('np.clip(mu, 0, 5)', 'np.clip(d, 0, 5)')+
+        geom_point()+
+        geom_line(aes(y='e'), color='red')
+)
+
+# %%
+x1 = x.counts
+x3 = xa.Dataset()
+x3['mu'] = x1.mean(dim='feature_id')
+x3['s2'] = (x1**2).mean(dim='feature_id')
+x3['s2'] = x3.s2-x3.mu**2
+x3 = x3.compute()
+
+x3 = x3.to_dataframe()
+
+# %%
+def moments():
+    from scipy.stats import kurtosis, skew
+    x1 = np.random.randn(1000)
+    x2 = [(x1**k).mean() for k in range(5)]
+    x3 = np.zeros((len(x2),))
+    x3[0] = 1
+    for n in range(2, len(x3)):
+        c = 1
+        for j in range(n+1):
+            x3[n] += c*x2[n-j]
+            c = -(c*x2[1]*(n-j))/(j+1)
+
+    x4 = x3[3:]/[x3[2]**(k/2) for k in range(3, len(x3))]
+    x4 - [skew(x1), kurtosis(x1, fisher=False)]
+
+# %%
+print(
+    ggplot(x3)+
+            aes('mu', 's2')+
+            geom_point()
+)
+
+
+# %%
+# %%
+x = xa.merge([analysis.data, analysis.clust1.prev.clust], join='inner')
+
+# %%
+x1 = x.total_cell.to_dataframe()
+print(
+    ggplot(x1)+aes('total_cell')+geom_freqpoly(bins=100)
+)
+
+# %%
+x1 = x[['mean', 'std']].to_dataframe()
+print(
+    ggplot(x1)+aes('std')+geom_freqpoly(bins=100)
+)
+
+print(
+    ggplot(x1)+aes('mean', 'std')+geom_point()
+)
+
+# %%
+x1 = x.sel(feature_id=['IFITM2', 'C5AR1'])
+x1 = x1.todense()
+x1 = xa.merge([
+    x1.drop_dims(['umap_dim', 'feature_id']),
+    x1.umap.to_dataset('umap_dim'),
+    x1.resid.to_dataset('feature_id'),
+])
+x1 = x1.to_dataframe()
+for x2 in ['IFITM2', 'C5AR1']:
+    x1[x2+'_q3'] = quantile(x1[x2], q=3)
+
+print(
+    ggplot(x1)+
+        aes('IFITM2', 'C5AR1')+
+        geom_point()+geom_density_2d(color='red')+
+        facet_grid('~cell_diagnosis')+
+        theme(figure_size=(7, 2))
+)
+
+x2 = x1[x1['cell_integrated_snn_res.0.3']==2]
+x2 = x2[['IFITM2_q3', 'C5AR1_q3']]
+x2 = sm.stats.Table.from_data(x2)
+print(
+    plot_table(x2)
+)
+
+# %%
+x1 = x.sel(feature_id='C5AR1')
+x1 = x1.todense()
+x1 = xa.merge([x1.drop_dims('umap_dim'), x1.umap.to_dataset('umap_dim')])
+x1 = x1.to_dataframe()
+x1['cell_integrated_snn_res.0.3'] = x1['cell_integrated_snn_res.0.3'].astype('category')
+x1['q3'] = pd.qcut(x1.resid, q=3)
+
+print(
+    ggplot(x1)+aes('UMAP_1', 'UMAP_2')+
+        geom_point(aes(color='q3'), alpha=0.1)
+)
+
+x2 = x1[['cell_integrated_snn_res.0.3', 'q3']]
+x2 = sm.stats.Table.from_data(x2)
+print(
+    plot_table(x2)
+)
 
 # %%
 x1 = x[['cell_integrated_snn_res.0.3', 'pred']].to_dataframe()
