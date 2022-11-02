@@ -11,7 +11,7 @@ from plotnine import *
 from ..common import helpers
 from ..common.caching import compose, lazy, XArrayCache, CSVCache
 from .._data import data
-from .._helpers import config, plot_table
+from .._helpers import config, plot_table, quantile
 
 # %%
 storage = config.cache/'playground4'
@@ -38,13 +38,7 @@ def anova(A1, A2, B):
     return X, r2, p
 
 # %%
-def quantile(x, q=3):
-    x1 = np.where(x==0, np.nan, x)
-    x1 = pd.qcut(x1, q=q)
-    x1 = x1.add_categories(pd.Interval(0,0))
-    x1 = x1.reorder_categories(np.roll(np.array(x1.dtype.categories), 1))
-    x1 = x1.fillna(pd.Interval(0,0))
-    return x1
+
 
 # %%
 class _analysis:
