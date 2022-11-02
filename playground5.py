@@ -23,20 +23,22 @@ class _analysis:
     @compose(property, lazy)
     def data(self):
         x = data.c2_neutrophils_integrated.copy()
-        x1 = x.counts.copy()
-        x1.data = x1.data.asformat('coo')
-        x['total_cell'] = x1.sum(dim='feature_id').todense()
-        x['total_feature'] = x1.sum(dim='cell_id').todense()
-        x = x.sel(feature_id=x['total_feature']>0)
-        x1 = 1e4*x1/x.total_cell
-        x['log1p_rpk'] = np.log1p(x1)
-        x['mean'] = x.log1p_rpk.mean(dim='cell_id').todense()        
-        x['std'] = (x.log1p_rpk**2).mean(dim='cell_id').todense()
-        x['std'] = (x['std']-x['mean']**2)**0.5
+        x1 = x.counts
+        x1 = x1.chunk({'cell_id': x.sizes['cell_id']//8, 'feature_id': x.sizes['feature_id']//4})
+        x1 = x1.map_blocks(lambda x: x.todense()).persist()
+        x['total_cell'] = x1.sum(dim='feature_id').persist()
+        x['total_feature'] = x1.sum(dim='cell_id').persist()
+        
+        x2 = np.log1p(1e4*x1/x.total_cell).persist()
+        x['log1p_rpk'] = x2
+        x['mean'] = x2.mean(dim='cell_id')
+        x['std'] = x2.std(dim='cell_id')
 
-        #x1 = x['counts'].todense()
-        #x2 = (x.total_cell/x.total_cell.sum())*x.total_feature
-        #x['resid'] = (x1-x2)/np.sqrt(x2)
+        x2 = (x.total_cell/x.total_cell.sum())*x.total_feature
+        #x2 = x2.persist()
+        x['resid'] = (x1-x2)/np.sqrt(x2)
+        x = x.compute()
+        x = x.sel(feature_id=x['total_feature']>0)
 
         return x
 
@@ -198,48 +200,6 @@ analysis = _analysis()
 self = analysis
 
 # %%
-x = data.c2_neutrophils_integrated[['counts']]
-x = x.transpose('cell_id', 'feature_id')
-x = x.chunk({'cell_id': x.sizes['cell_id']//8, 'feature_id': x.sizes['feature_id']//4}) 
-x.counts.data = x.counts.data.map_blocks(lambda x: x.todense(), dtype=x.counts.dtype)
-
-# %%
-x1 = x.counts
-x2 = xa.Dataset()
-x2['mu'] = x1.mean(dim='cell_id')
-x2['s2'] = (x1**2).mean(dim='cell_id')
-x2['s2'] = x2['s2']-x2['mu']**2
-x2 = x2.compute()
-
-from skmisc.loess import loess
-x2['d'] = (x2['mu']**2)/(x2['s2']-x2['mu'])
-
-x4 = np.clip(x2['mu'], 0, 2.2)
-x3 = loess(x4, np.clip(x2['d'], 0, 10))
-x3.fit()
-x2['e'] = 'feature_id', x3.predict(x4).values
-x2 = x2.to_dataframe()
-
-# %%
-
-print(
-    ggplot(x2)+
-        aes('np.clip(mu, 0, 5)', 'np.clip(d, 0, 5)')+
-        geom_point()+
-        geom_line(aes(y='e'), color='red')
-)
-
-# %%
-x1 = x.counts
-x3 = xa.Dataset()
-x3['mu'] = x1.mean(dim='feature_id')
-x3['s2'] = (x1**2).mean(dim='feature_id')
-x3['s2'] = x3.s2-x3.mu**2
-x3 = x3.compute()
-
-x3 = x3.to_dataframe()
-
-# %%
 def moments():
     from scipy.stats import kurtosis, skew
     x1 = np.random.randn(1000)
@@ -255,15 +215,6 @@ def moments():
     x4 = x3[3:]/[x3[2]**(k/2) for k in range(3, len(x3))]
     x4 - [skew(x1), kurtosis(x1, fisher=False)]
 
-# %%
-print(
-    ggplot(x3)+
-            aes('mu', 's2')+
-            geom_point()
-)
-
-
-# %%
 # %%
 x = xa.merge([analysis.data, analysis.clust1.prev.clust], join='inner')
 
