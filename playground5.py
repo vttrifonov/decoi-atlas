@@ -34,13 +34,23 @@ class _analysis:
         x['mean'] = x2.mean(dim='cell_id')
         x['std'] = x2.std(dim='cell_id')
 
-        x2 = (x.total_cell/x.total_cell.sum())*x.total_feature
-        #x2 = x2.persist()
-        x['resid'] = (x1-x2)/np.sqrt(x2)
         x = x.compute()
         x = x.sel(feature_id=x['total_feature']>0)
 
         return x
+
+    @compose(property, lazy, XArrayCache())
+    def feature_entrez(self):
+        #self = analysis
+        from .sigs.entrez import symbol_entrez
+
+        x6 = self.data.feature_id.to_series()
+        x6 = symbol_entrez(x6)
+        x6 = x6.rename(
+            symbol='feature_id',
+            Entrez_Gene_ID = 'entrez'
+        )
+        return x6.rename('feature_entrez')
 
     @compose(property, lazy)
     def clust1(self):
@@ -94,7 +104,29 @@ class _analysis:
             x3['pred'] = xa.DataArray(x2.predict_proba(x1.data), [x1.cell_id, x3.clust])
             return x3
 
-        class _gmm:
+        class _enrichment:
+            @compose(property, lazy, XArrayCache())
+            def enrich(self):
+                from .sigs._sigs import sigs 
+                from .sigs.fit import enrichment
+                import sparse
+
+                x1 = xa.merge([
+                    sigs.all1,
+                    self.feature_entrez.rename(entrez='gene'),
+                    self.means
+                ], join='inner')
+                x1['means'] = xa.apply_ufunc(
+                    np.matmul, x1.feature_entrez, x1.means,
+                    input_core_dims=[['gene', 'feature_id'], ['feature_id', 'clust']],
+                    output_core_dims=[['gene', 'clust']]
+                )
+                x1['means'] = x1.means/x1.feature_entrez.sum(dim='feature_id')
+                x1.means.data = sparse.as_coo(x1.means.data)
+                x1 = enrichment(x1.means, x1.set)
+                return x1
+
+        class _gmm(_enrichment):
             k = 10
 
             @property
@@ -127,6 +159,21 @@ class _analysis:
                     )                    
                 return self.gmm.pred.argmax(dim='clust')
 
+            @compose(property, lazy, XArrayCache())
+            def means(self):
+                if self.k==1:
+                    x = self.data.mean(dim='cell_id')
+                    x = x.rename('means')
+                    x = x.expand_dims(clust=[0])
+                    return x
+
+                x1 = self.svd
+                x2 = self.gmm.means
+                x2 = x1.v @ x2
+                x2 = x2 * x1.scale + x1['mean']
+                x2 = x2.rename('means')
+                return x2
+
             @compose(property, lazy)
             def split(self):
                 split = self._split()
@@ -151,7 +198,7 @@ class _analysis:
                 k = k[self.c]
                 return k
 
-        class _split1:
+        class _split1(_enrichment):
             @property
             def storage(self):
                 return self.prev.storage/'split'
@@ -164,8 +211,16 @@ class _analysis:
             def data(self):
                 return self.prev.data
 
+            @property
+            def feature_entrez(self):
+                return self.prev.feature_entrez
+
             class _item(_item1, _gmm):
                 pass
+            
+            @property
+            def items(self):
+                return list(self.prev.clust.to_series().drop_duplicates())
 
             def item(self, c):
                 item = self._item()
@@ -175,15 +230,29 @@ class _analysis:
             
             @property
             def clust(self):
-                c = self.prev.clust.to_series().drop_duplicates()
-                c = [self.item(c).clust for c in c]
-                c1 = np.cumsum([c.max().data+1 for c in c])
+                c = [self.item(c).clust for c in self.items]
+                c1 = np.cumsum([c.data.max()+1 for c in c])
                 c1 = [0]+list(c1[:-1])
                 c = [c+c1 for c, c1 in zip(c, c1)]
                 c = xa.concat(c, dim='cell_id')
                 return c 
 
-        _gmm._split = _split1            
+            @property
+            def means(self):
+                c = [self.item(c).means for c in self.items]
+                c1 = np.cumsum([c.clust.data.max()+1 for c in c])
+                c1 = [0]+list(c1[:-1])
+                c = [
+                    c.assign_coords(
+                        clust1=('clust', c.clust.data+c1)
+                    ).swap_dims(clust='clust1').\
+                        drop('clust').rename(clust1='clust')
+                    for c, c1 in zip(c, c1)
+                ]
+                c = xa.concat(c, dim='clust')
+                return c
+
+        _gmm._split = _split1
 
         class _gmm1(_gmm):
             storage = self.storage/'clust1'
@@ -193,6 +262,10 @@ class _analysis:
             def data(self):
                 return self.prev.data.log1p_rpk.todense()
 
+            @property
+            def feature_entrez(self):
+                return self.prev.feature_entrez
+
         return _gmm1().split
 
 analysis = _analysis()
@@ -200,84 +273,19 @@ analysis = _analysis()
 self = analysis
 
 # %%
-def moments():
-    from scipy.stats import kurtosis, skew
-    x1 = np.random.randn(1000)
-    x2 = [(x1**k).mean() for k in range(5)]
-    x3 = np.zeros((len(x2),))
-    x3[0] = 1
-    for n in range(2, len(x3)):
-        c = 1
-        for j in range(n+1):
-            x3[n] += c*x2[n-j]
-            c = -(c*x2[1]*(n-j))/(j+1)
-
-    x4 = x3[3:]/[x3[2]**(k/2) for k in range(3, len(x3))]
-    x4 - [skew(x1), kurtosis(x1, fisher=False)]
-
-# %%
 x = xa.merge([analysis.data, analysis.clust1.prev.clust], join='inner')
 
 # %%
-x1 = x.total_cell.to_dataframe()
-print(
-    ggplot(x1)+aes('total_cell')+geom_freqpoly(bins=100)
-)
-
-# %%
-x1 = x[['mean', 'std']].to_dataframe()
-print(
-    ggplot(x1)+aes('std')+geom_freqpoly(bins=100)
-)
-
-print(
-    ggplot(x1)+aes('mean', 'std')+geom_point()
-)
-
-# %%
-x1 = x.sel(feature_id=['IFITM2', 'C5AR1'])
-x1 = x1.todense()
 x1 = xa.merge([
-    x1.drop_dims(['umap_dim', 'feature_id']),
-    x1.umap.to_dataset('umap_dim'),
-    x1.resid.to_dataset('feature_id'),
-])
-x1 = x1.to_dataframe()
-for x2 in ['IFITM2', 'C5AR1']:
-    x1[x2+'_q3'] = quantile(x1[x2], q=3)
-
+    x[['pred', 'cell_integrated_snn_res.0.3']], 
+    x.umap.to_dataset(dim='umap_dim')
+]).to_dataframe()
+x1['pred'] = x1.pred.astype('category')
 print(
     ggplot(x1)+
-        aes('IFITM2', 'C5AR1')+
-        geom_point()+geom_density_2d(color='red')+
-        facet_grid('~cell_diagnosis')+
-        theme(figure_size=(7, 2))
-)
-
-x2 = x1[x1['cell_integrated_snn_res.0.3']==2]
-x2 = x2[['IFITM2_q3', 'C5AR1_q3']]
-x2 = sm.stats.Table.from_data(x2)
-print(
-    plot_table(x2)
-)
-
-# %%
-x1 = x.sel(feature_id='C5AR1')
-x1 = x1.todense()
-x1 = xa.merge([x1.drop_dims('umap_dim'), x1.umap.to_dataset('umap_dim')])
-x1 = x1.to_dataframe()
-x1['cell_integrated_snn_res.0.3'] = x1['cell_integrated_snn_res.0.3'].astype('category')
-x1['q3'] = pd.qcut(x1.resid, q=3)
-
-print(
-    ggplot(x1)+aes('UMAP_1', 'UMAP_2')+
-        geom_point(aes(color='q3'), alpha=0.1)
-)
-
-x2 = x1[['cell_integrated_snn_res.0.3', 'q3']]
-x2 = sm.stats.Table.from_data(x2)
-print(
-    plot_table(x2)
+        aes('UMAP_1', 'UMAP_2')+
+        geom_point(aes(color='pred'), alpha=0.1)+
+        theme(legend_position='none')
 )
 
 # %%
@@ -286,36 +294,106 @@ for c in x1:
     x1[c] = x1[c].astype('category')
 x1 = sm.stats.Table.from_data(x1)
 print(
-    plot_table(x1, show_obs=False, show_exp=False)
-)
-
-x3 = 3
-x2 = x1.resid_pearson.loc[x3,:]
-x2 = list(x2[x2>5].index.astype(int))
-x2 = x1.resid_pearson.loc[:,x2]
-x2 = x2[x2.index!=x3]
-x2 = x2.max(axis=0)
-x2 = list(x2[x2<5].index.astype(int))
-len(x2)
-
-x1 = x[['cell_integrated_snn_res.0.3', 'pred']].to_dataframe()
-x1['cell_integrated_snn_res.0.3']=x1['cell_integrated_snn_res.0.3']==x3
-x1['pred'] = x1['pred'].isin(x2)
-x1 = sm.stats.Table.from_data(x1)
-print(
     plot_table(x1)
 )
 
+
 # %%
-x1 = xa.merge([x[['pred', 'cell_integrated_snn_res.0.3']], x.umap.to_dataset(dim='umap_dim')]).to_dataframe()
+x = xa.merge([
+    analysis.data, 
+    analysis.clust1.clust,
+    analysis.clust1.means.rename('clust_means'),
+    analysis.clust1.enrich.rename({k: 'sig_'+k for k in analysis.clust1.enrich.keys()})
+], join='inner')
+
+# %%
+x1 = xa.merge([
+    x[['pred', 'cell_integrated_snn_res.0.3']], 
+    x.umap.to_dataset(dim='umap_dim')
+]).to_dataframe()
 x1['pred'] = x1.pred.astype('category')
 print(
-    ggplot(x1[x1['pred'].isin(x2)])+
+    ggplot(x1)+
         aes('UMAP_1', 'UMAP_2')+
         geom_point(aes(color='pred'), alpha=0.1)+
         theme(legend_position='none')
 )
 
 # %%
-x2 = x1.pred.value_counts()
+x1 = x[['cell_integrated_snn_res.0.3', 'pred']].to_dataframe()
+for c in x1:
+    x1[c] = x1[c].astype('category')
+x1 = sm.stats.Table.from_data(x1)
+x1 = pd.concat([
+    v.stack().rename(k)
+    for k, v in [
+        ('table', x1.table_orig), 
+        ('resid', x1.resid_pearson), 
+        ('fit', x1.fittedvalues)
+    ]
+], axis=1).reset_index()
+
+x1 = x1.sort_values('resid', ascending=False).\
+    drop_duplicates('pred').\
+    query('resid>5').\
+    sort_values('table')
+    
+x1[x1['cell_integrated_snn_res.0.3']==4]
+    
+
+# %%
+x1 = x.sel(feature_id='CD274').drop_dims(['clust', 'sig'])
+x1 = x1.todense()
+x1 = xa.merge([x1.drop_dims('umap_dim'), x1.umap.to_dataset('umap_dim')])
+x1 = x1.to_dataframe()
+x1['cell_integrated_snn_res.0.3'] = x1['cell_integrated_snn_res.0.3'].astype('category')
+x1['q3'] = quantile(x1.log1p_rpk, q=3)
+
+x2 = x1[['pred', 'q3']]
+x2 = sm.stats.Table.from_data(x2)
+x2 = pd.concat([
+    v.stack().rename(k)
+    for k, v in [
+        ('table', x2.table_orig), 
+        ('resid', x2.resid_pearson), 
+        ('fit', x2.fittedvalues)
+    ]
+], axis=1).reset_index()
+
+x3 = x2.sort_values('resid', ascending=False).\
+    query('resid>5')
+x3 = x3[x3.q3==pd.Interval(2.245, 4.185)]
+
+x4 = x1[x1.pred.isin([97])]
+print(
+    ggplot(x4)+
+        aes('UMAP_1', 'UMAP_2')+
+        geom_point(x4[x4.log1p_rpk==0], color='gray', alpha=0.1)+
+        geom_point(x4[x4.log1p_rpk>0], aes(color='q3'), alpha=0.1)+
+        theme(legend_position='none')
+)
+
+# %%
+x1 = x[['sig_coef', 'sig_p']].sel(clust=0).to_dataframe()
+x1 = x1.sort_values('sig_p')
+x1 = x1[x1.sig_p<1e-4]
+
+# %%
+import scipy.cluster.hierarchy as hier
+
+x1 = x.sig_se.transpose('sig', 'clust')
+x1 = x1.fillna(0)
+#x1 = x1.sel(sig=x1.sig_prefix.isin(['HALLMARK', 'KEGG1']))
+x2 = hier.linkage(
+    x1.data, method='average', metric='euclidean'
+)
+x3 = hier.dendrogram(x2, 10, truncate_mode='level')
+plt.show()
+
+x1['sig_clust'] = 'sig', hier.fcluster(x2, 100, criterion='maxclust')
+
+x4 = x1['sig_clust'].to_series().reset_index()
+
+x4[x4.sig.str.contains('INTERFER')]
+x4 = x4[x4.sig_clust==34]
 # %%
