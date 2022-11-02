@@ -16,3 +16,4 @@ conda install radian
 conda install psycopg2
 
 pip install adjustText
+conda install scikit-misc
