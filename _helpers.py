@@ -4,6 +4,7 @@ if __name__ == '__main__':
 
 from pathlib import Path
 import pandas as pd
+import numpy as np
 from plotnine import *
 
 #%%
@@ -51,3 +52,10 @@ def plot_table(x3, show_obs=True, show_exp=True):
     )
 
 # %%
+def quantile(x, q=3):
+    x1 = np.where(x==0, np.nan, x)
+    x1 = pd.qcut(x1, q=q)
+    x1 = x1.add_categories(pd.Interval(0,0))
+    x1 = x1.reorder_categories(np.roll(np.array(x1.dtype.categories), 1))
+    x1 = x1.fillna(pd.Interval(0,0))
+    return x1
