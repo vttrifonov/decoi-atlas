@@ -15,6 +15,72 @@ from .common.caching import compose, lazy, XArrayCache, CSVCache
 from ._data import data
 from ._helpers import config, plot_table, quantile
 
+# %%
+def svd(x, k=None, scale=True, chunks=None, dims=None):
+    if dims is None:
+        dims = x.dims
+    if chunks is None:
+        chunks = {k: x.sizes[k] for k in dims}
+    if k is None:
+        k = min([x.sizes[k] for k in dims])
+
+    import dask.array as da
+    x = x.chunk(chunks)
+    if scale:
+        x = xa.merge([
+            x.rename('mat'),
+            x.mean(dim=dims[0]).rename('mean'),
+            x.std(dim=dims[0]).rename('scale')
+        ])
+        x['scale'] = np.sqrt(x.sizes[dims[0]])*x.scale
+        x['scale'] = xa.where(x.scale==0, 1, x.scale)
+    else:
+        x = xa.merge([
+            x.rename('mat'),
+            xa.DataArray(0, [x[dims[1]]], name='mean'),
+            xa.DataArray(1, [x[dims[1]]], name='scale')
+        ])
+    x['mat'] = (x.mat-x['mean'])/x['scale']
+    x = x.transpose(*dims)
+    svd = da.linalg.svd_compressed(
+        x.mat.data, 
+        k=k, n_power_iter=2
+    )
+    rand_svd = da.linalg.svd_compressed(
+        da.apply_along_axis(
+            np.random.permutation, 0, x.mat.data, 
+            dtype=x.mat.dtype, shape=(svd[0].shape[0],)
+        ),
+        k=len(svd[1]), n_power_iter=2
+    )
+    svd = xa.Dataset(
+        dict(
+            u=((dims[0], 'pc'), svd[0]),
+            s=(('pc',), svd[1]),
+            v=((dims[1], 'pc'), svd[2].T),
+            rand_s=(('pc',), rand_svd[1])
+        ),
+        {
+            dims[0]: x[dims[0]], 
+            dims[1]: x[dims[1]], 
+            'pc': range(len(svd[1]))
+        }
+    )
+    svd = xa.merge([svd, x[['mean', 'scale']]])
+    svd = svd.compute()
+    return svd
+
+def gmm(x1, k, dims=None):
+    from sklearn.mixture import GaussianMixture
+    if dims is None:
+        dims = x1.dims
+    x1 = x1.transpose(*dims)
+    x2 = GaussianMixture(k, verbose=2).fit(x1.data)
+    x3 = xa.Dataset()
+    x3['means'] = xa.DataArray(x2.means_, [('clust', range(x2.n_components)), x1[dims[1]]])
+    x3['covs'] = xa.DataArray(x2.covariances_, [x3.clust, x3[dims[1]], x3[dims[1]].rename({dims[1]: dims[1]+'_1'})])
+    x3['pred'] = xa.DataArray(x2.predict_proba(x1.data), [x1[dims[0]], x3.clust])
+    return x3
 
 # %%
 class _analysis:
@@ -54,56 +120,6 @@ class _analysis:
 
     @compose(property, lazy)
     def clust1(self):
-        import dask.array as da
-        from sklearn.mixture import GaussianMixture
-
-        def svd(x, chunks, k):
-            x = x.chunk(chunks)
-            x = xa.merge([
-                x.rename('mat'),
-                x.mean(dim='cell_id').rename('mean'),
-                x.std(dim='cell_id').rename('scale')
-            ])
-            x['scale'] = np.sqrt(x.sizes['cell_id'])*x.scale
-            x['scale'] = xa.where(x.scale==0, 1, x.scale)
-            x['mat'] = (x.mat-x['mean'])/x['scale']
-            x = x.transpose('cell_id', 'feature_id')
-            svd = da.linalg.svd_compressed(
-                x.mat.data, 
-                k=k, n_power_iter=2
-            )
-            rand_svd = da.linalg.svd_compressed(
-                da.apply_along_axis(
-                    np.random.permutation, 0, x.mat.data, 
-                    dtype=x.mat.dtype, shape=(svd[0].shape[0],)
-                ),
-                k=len(svd[1]), n_power_iter=2
-            )
-            svd = xa.Dataset(
-                dict(
-                    u=(('cell_id', 'pc'), svd[0]),
-                    s=(('pc',), svd[1]),
-                    v=(('feature_id', 'pc'), svd[2].T),
-                    rand_s=(('pc',), rand_svd[1])
-                ),
-                dict(
-                    cell_id = x.cell_id, 
-                    feature_id = x.feature_id, 
-                    pc = range(len(svd[1]))
-                )
-            )
-            svd = xa.merge([svd, x[['mean', 'scale']]])
-            svd = svd.compute()
-            return svd
-
-        def gmm(x1, k):
-            x2 = GaussianMixture(k, verbose=2).fit(x1.data)
-            x3 = xa.Dataset()
-            x3['means'] = xa.DataArray(x2.means_, [('clust', range(x2.n_components)), x1.pc])
-            x3['covs'] = xa.DataArray(x2.covariances_, [x3.clust, x3.pc, x3.pc.rename(pc='pc1')])
-            x3['pred'] = xa.DataArray(x2.predict_proba(x1.data), [x1.cell_id, x3.clust])
-            return x3
-
         class _enrichment:
             @compose(property, lazy, XArrayCache())
             def enrich(self):
@@ -137,9 +153,8 @@ class _analysis:
             def svd(self):
                 print('svd '+str(self.storage))
                 svd1 = svd(
-                    self.data, 
-                    {'cell_id': 1000, 'feature_id': 1000}, 
-                    self.svd_k
+                    self.data, self.svd_k,
+                    {'cell_id': 1000, 'feature_id': 1000}                    
                 )
                 return svd1
 
@@ -273,38 +288,57 @@ analysis = _analysis()
 self = analysis
 
 # %%
-x = xa.merge([analysis.data, analysis.clust1.prev.clust], join='inner')
-
-# %%
-x1 = xa.merge([
-    x[['pred', 'cell_integrated_snn_res.0.3']], 
-    x.umap.to_dataset(dim='umap_dim')
-]).to_dataframe()
-x1['pred'] = x1.pred.astype('category')
-print(
-    ggplot(x1)+
-        aes('UMAP_1', 'UMAP_2')+
-        geom_point(aes(color='pred'), alpha=0.1)+
-        theme(legend_position='none')
-)
-
-# %%
-x1 = x[['cell_integrated_snn_res.0.3', 'pred']].to_dataframe()
-for c in x1:
-    x1[c] = x1[c].astype('category')
-x1 = sm.stats.Table.from_data(x1)
-print(
-    plot_table(x1)
-)
-
-
-# %%
 x = xa.merge([
     analysis.data, 
     analysis.clust1.clust,
     analysis.clust1.means.rename('clust_means'),
     analysis.clust1.enrich.rename({k: 'sig_'+k for k in analysis.clust1.enrich.keys()})
 ], join='inner')
+
+# %%
+x1 = x[['sig_coef', 'sig_p']].to_dataframe().reset_index()
+x1 = x1.sort_values('sig_p')
+x1 = x1[x1.sig_p<1e-4]
+
+# %%
+x1 = x.sig_se.fillna(0).transpose('sig', 'clust')
+x1 = x1.assign_coords(
+    clust1=lambda x: ('clust', x.clust.data.astype(str))
+).swap_dims(clust='clust1').drop('clust').rename(clust1='clust')
+
+x2 = (x1-x1.mean('sig'))/x1.std('sig')
+x2 = pd.DataFrame(dict(
+    mu=x2.mean('clust'),
+    s=x2.std('clust')
+), index=x2.sig)
+x2.plot('mu', 's', kind='scatter')
+
+x4 = svd(x1)
+
+x4['mean'].to_series().sort_values().plot()
+x4['s'].to_series().pipe(lambda x: x**2/(x**2).sum()).plot()
+
+x4.sel(pc=0).v.to_series().plot()
+
+
+# %%
+import scipy.cluster.hierarchy as hier
+
+x1 = x.sig_se.transpose('sig', 'clust')
+x1 = x1.fillna(0)
+#x1 = x1.sel(sig=x1.sig_prefix.isin(['HALLMARK', 'KEGG1']))
+x2 = hier.linkage(
+    x1.data, method='average', metric='euclidean'
+)
+x3 = hier.dendrogram(x2, 10, truncate_mode='level')
+plt.show()
+
+x1['sig_clust'] = 'sig', hier.fcluster(x2, 100, criterion='maxclust')
+
+x4 = x1['sig_clust'].to_series().reset_index()
+
+x4[x4.sig.str.contains('INTERFER')]
+x4 = x4[x4.sig_clust==34]
 
 # %%
 x1 = xa.merge([
@@ -374,26 +408,29 @@ print(
 )
 
 # %%
-x1 = x[['sig_coef', 'sig_p']].sel(clust=0).to_dataframe()
-x1 = x1.sort_values('sig_p')
-x1 = x1[x1.sig_p<1e-4]
+x = xa.merge([analysis.data, analysis.clust1.prev.clust], join='inner')
 
 # %%
-import scipy.cluster.hierarchy as hier
-
-x1 = x.sig_se.transpose('sig', 'clust')
-x1 = x1.fillna(0)
-#x1 = x1.sel(sig=x1.sig_prefix.isin(['HALLMARK', 'KEGG1']))
-x2 = hier.linkage(
-    x1.data, method='average', metric='euclidean'
+x1 = xa.merge([
+    x[['pred', 'cell_integrated_snn_res.0.3']], 
+    x.umap.to_dataset(dim='umap_dim')
+]).to_dataframe()
+x1['pred'] = x1.pred.astype('category')
+print(
+    ggplot(x1)+
+        aes('UMAP_1', 'UMAP_2')+
+        geom_point(aes(color='pred'), alpha=0.1)+
+        theme(legend_position='none')
 )
-x3 = hier.dendrogram(x2, 10, truncate_mode='level')
-plt.show()
 
-x1['sig_clust'] = 'sig', hier.fcluster(x2, 100, criterion='maxclust')
+# %%
+x1 = x[['cell_integrated_snn_res.0.3', 'pred']].to_dataframe()
+for c in x1:
+    x1[c] = x1[c].astype('category')
+x1 = sm.stats.Table.from_data(x1)
+print(
+    plot_table(x1)
+)
 
-x4 = x1['sig_clust'].to_series().reset_index()
 
-x4[x4.sig.str.contains('INTERFER')]
-x4 = x4[x4.sig_clust==34]
 # %%
