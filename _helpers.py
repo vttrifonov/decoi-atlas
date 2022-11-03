@@ -20,18 +20,12 @@ config = _config()
 def plot_table(x3, show_obs=True, show_exp=True):
     x1 = [x3.table_orig.index.name, x3.table_orig.columns.name]
     x3 = pd.concat([
-        x3.table_orig.reset_index().\
-            melt(id_vars=x1[:1]).\
-            rename(columns={'value': 'table'}).\
-            set_index(x1),
-        x3.resid_pearson.reset_index().\
-            melt(id_vars=x1[:1]).\
-            rename(columns={'value': 'resid'}).\
-            set_index(x1),
-        x3.fittedvalues.reset_index().\
-            melt(id_vars=x1[:1]).\
-            rename(columns={'value': 'fit'}).\
-            set_index(x1)
+        v.stack().rename(k)
+        for k, v in [
+            ('table', x3.table_orig), 
+            ('resid', x3.resid_pearson), 
+            ('fit', x3.fittedvalues)
+        ]
     ], axis=1).reset_index()
     if show_exp:
         x3['delta'] = x3['table'].astype(str) + '\n' + x3['fit'].astype(int).astype(str)
