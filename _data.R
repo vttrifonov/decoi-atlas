@@ -19,4 +19,11 @@ data <- obj() %>%
             config$cache, 'download',
             'seurat_COVID19_Neutrophils_cohort2_rhapsody_jonas_FG_2020-08-18.rds'
         )))
+    }) %>%
+
+    lazy_prop(c1_pbmc, {
+        UpdateSeuratObject(readRDS(file.path(
+            config$cache, 'download',
+            'seurat_COVID19_PBMC_cohort1_10x_jonas_FG_2020-08-15.rds'
+        )))
     })
