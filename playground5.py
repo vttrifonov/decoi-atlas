@@ -80,6 +80,7 @@ def gmm(x1, k, dims=None):
     x3['means'] = xa.DataArray(x2.means_, [('clust', range(x2.n_components)), x1[dims[1]]])
     x3['covs'] = xa.DataArray(x2.covariances_, [x3.clust, x3[dims[1]], x3[dims[1]].rename({dims[1]: dims[1]+'_1'})])
     x3['pred'] = xa.DataArray(x2.predict_proba(x1.data), [x1[dims[0]], x3.clust])
+    x3['weights'] = xa.DataArray(x2.weights_, [x3.clust])
     return x3
 
 def gmm_kl(x5): 
@@ -101,7 +102,7 @@ def gmm_kl(x5):
 
 class _enrichment:
     @compose(property, lazy, XArrayCache())
-    def enrich(self):
+    def data(self):
         from .sigs._sigs import sigs 
         from .sigs.fit import enrichment
         import sparse
@@ -125,6 +126,7 @@ class _enrichment:
 
 class _gmm:
     k = 10
+    dims = ['cell_id', 'feature_id']
 
     @property
     def svd_k(self):
@@ -136,8 +138,8 @@ class _gmm:
         svd1 = svd(
             self.data, 
             k = self.svd_k,
-            chunks = {'cell_id': 1000, 'feature_id': 1000},
-            dims = ['cell_id', 'feature_id']
+            chunks = {self.dims[0]: 1000, self.dims[1]: 1000},
+            dims = self.dims
         )
         return svd1
 
@@ -145,22 +147,26 @@ class _gmm:
     def gmm(self):
         print('gmm '+str(self.storage))
         svd1 = self.svd
-        gmm1 = gmm(svd1.u * svd1.s, self.k, dims=['cell_id', 'pc'])
+        gmm1 = gmm(svd1.u * svd1.s, self.k, dims=[self.dims[0], 'pc'])
         return gmm1
+
+    @compose(property, lazy)
+    def kl(self):
+        return gmm_kl(self.gmm)
 
     @compose(property, lazy, XArrayCache())
     def clust(self):
         if self.k==1:
             return xa.DataArray(
-                [0]*self.data.sizes['cell_id'],
-                [self.data.cell_id]
+                [0]*self.data.sizes[self.dims[0]],
+                [self.data[self.dims[0]]]
             )                    
         return self.gmm.pred.argmax(dim='clust')
 
     @compose(property, lazy, XArrayCache())
     def means(self):
         if self.k==1:
-            x = self.data.mean(dim='cell_id')
+            x = self.data.mean(dim=self.dims[0])
             x = x.rename('means')
             x = x.expand_dims(clust=[0])
             return x
@@ -172,9 +178,34 @@ class _gmm:
         x2 = x2.rename('means')
         return x2
 
-def random_data(n, m):
+    @compose(property, lazy)
+    def gmm_svd(self):
+        x4 = np.linalg.svd(self.gmm.covs)
+        return xa.Dataset(dict(
+            u = xa.DataArray(x4[0], [self.gmm.clust, self.gmm.pc, self.gmm.pc_1]),
+            s = xa.DataArray(x4[1], [self.gmm.clust, self.gmm.pc_1])
+        ))
+
+    def proba(self, X):    
+        x4 = self.gmm_svd
+        x4 = xa.merge([
+            (x4.u * 1/np.sqrt(x4.s)).rename('mat'),
+            -0.5*np.log(x4.s).sum(dim='pc_1').rename('log_det')
+        ])
+        sigma = x4
+        
+        x5 = xa.dot(X - self.gmm.means, sigma.mat, dims=['pc'])
+        x5 = (x5**2).sum(dim='pc_1')
+        x5 = -0.5*(np.log(2*np.pi)*X.sizes['pc']+x5)+sigma.log_det
+        x5 = x5 + np.log(self.gmm.weights)
+        x5 = x5 - x5.max(dim='clust')
+        x5 = np.exp(x5)
+        x5 = x5/x5.sum(dim='clust')
+        return x5
+
+def random_data(n, m, k):
     def _(i):
-        u, s, v = np.linalg.svd(np.random.randn(50*2).reshape((50,2)), full_matrices=False)
+        u, s, v = np.linalg.svd(np.random.randn(k*2).reshape((k,2)), full_matrices=False)
         s = np.sort(10*np.random.random(2))[::-1]
         x1 = (u*s.reshape((1,-1)))@v+5*np.random.random(2).reshape((1,-1))
         return x1, [str(i)]*x1.shape[0]
@@ -236,7 +267,7 @@ def random_data(n, m):
     )
 
 # %%
-#random_data(2, 2)
+#random_data(1, 4, 1000)
 
 # %%
 class _analysis:
@@ -376,7 +407,7 @@ class _analysis:
 
     @compose(property, lazy)
     def clust2(self):
-        class _gmm1(_gmm, _enrichment):
+        class _gmm1(_gmm):
             storage = self.storage/'clust2'
             prev = self
             k = 100
@@ -389,6 +420,39 @@ class _analysis:
             def feature_entrez(self):
                 return self.prev.feature_entrez
 
+            class _enrichment(_enrichment):
+                @property
+                def storage(self):
+                    return self.prev.storage/'enrich'  
+
+                class _clust1(_gmm):
+                    @property
+                    def storage(self):
+                        return self.prev.storage/'clust1'  
+
+                    @property
+                    def data(self):
+                        return self.prev.data.coef.fillna(0).\
+                            transpose('sig', 'clust').rename(clust='clust1')
+
+                    k = 10
+                    dims = ['sig', 'clust1']
+                    @property
+                    def svd_k(self):
+                        return min(self.data.sizes.values())
+
+                @compose(property, lazy)
+                def clust1(self):
+                    clust = self._clust1()
+                    clust.prev = self              
+                    return clust
+
+            @compose(property, lazy)
+            def enrich(self):
+                enrich = self._enrichment()
+                enrich.prev = self
+                return enrich
+
         return _gmm1()
 
 analysis = _analysis()
@@ -400,7 +464,10 @@ x = xa.merge([
     analysis.data, 
     analysis.clust2.clust,
     analysis.clust2.means.rename('clust_means'),
-    analysis.clust2.enrich.rename({k: 'sig_'+k for k in analysis.clust1.enrich.keys()})
+    analysis.clust2.enrich.data.rename({
+        k: 'sig_'+k 
+        for k in analysis.clust2.enrich.data.keys()
+    })
 ], join='inner')
 
 # %%
@@ -409,26 +476,27 @@ x1 = x1.sort_values('sig_p')
 x1 = x1[x1.sig_p<1e-4]
 
 # %%
-x1 = x.sig_coef.fillna(0).transpose('sig', 'clust')
-x1['clust'] = x1.clust.astype('str')[x1.clust]
+x1 = analysis.clust2.enrich.clust1.data.copy()
+x1['clust1'] = x1.clust1.astype('str')[x1.clust1]
 
 x2 = pd.DataFrame(dict(
     mu=x1.mean('sig'),
     sigma=x1.std('sig')
-), index=x1.clust)
+), index=x1.clust1)
 plt.figure()
 x2.plot('mu', 'sigma', kind='scatter')
 
 x2 = (x1-x1.mean('sig'))/x1.std('sig')
 x2 = pd.DataFrame(dict(
-    mu=x2.mean('clust'),
-    sigma=x2.std('clust')
+    mu=x2.mean('clust1'),
+    sigma=x2.std('clust1')
 ), index=x2.sig)
 plt.figure()
 x2.plot('mu', 'sigma', kind='scatter')
 
 #x1.data = np.apply_along_axis(np.random.permutation, 0, x1.data)
-x4 = svd(x1, scale=True)
+x4 = analysis.clust2.enrich.clust1.svd
+x4['clust1'] = x4.clust1.astype('str')[x4.clust1]
 
 plt.figure()
 x4['s'].query(pc='pc<70').to_series().\
@@ -441,21 +509,18 @@ plt.figure()
 x4['u'].sel(pc=0).to_series().sort_values().plot()
 
 # %%
-x5 = x4#.query(pc='pc<99')
-x5 = x5.u * x5.s
-#x5.data = np.apply_along_axis(np.random.permutation, 0, x5.data)
-x5 = gmm(x5, 20)
+x5 = analysis.clust2.enrich.clust1.gmm
 x5['clust'] = x5.clust.astype('str')[x5.clust]
 
 print(
     x5.pred.argmax('clust').to_series().value_counts()
 )
 
-x6 = (x5.means.rename(clust='sig_clust')@x4.v)*x4.scale + x4['mean']
+x6 = (x5.means@x4.v)*x4.scale + x4['mean']
 x6 = x6.rename('means').to_dataframe().reset_index()
 print(
     ggplot(x6)+
-        aes('clust', 'sig_clust')+
+        aes('clust1', 'clust')+
         geom_tile(aes(fill='means'))+
         scale_fill_gradient2(
             low='blue', mid='white', high='red',
@@ -463,20 +528,8 @@ print(
         )
 )
 
-x6 = xa.DataArray(np.linalg.inv(x5.covs), x5.covs.coords).rename(clust='clust1')
-x7 = xa.dot(x6, x5.covs.rename(clust='clust0', pc='pc_2'), dims=['pc_1'])
-x7 = x7.transpose('clust0', 'clust1', 'pc', 'pc_2')
-x7 = xa.DataArray(
-    np.vectorize(np.diag, signature='(n,n)->(n)')(x7).sum(axis=2),
-    [x7.clust0, x7.clust1]
-)
-x8 = x5.means.rename(clust='clust1')-x5.means.rename(clust='clust0')
-x8 = xa.dot(xa.dot(x8, x6, dims=['pc']), x8.rename(pc='pc_1'), dims=['pc_1'])
-x9 = xa.DataArray(np.log(np.linalg.svd(x5.covs, compute_uv=False)).sum(axis=1), [x5.clust])
-x9 = x9.rename(clust='clust1')-x9.rename(clust='clust0')
-x10 = 0.5*(x7+x8-x5.sizes['pc']+x9)
-x10 = 0.5*(x10+x10.rename(clust0='clust1', clust1='clust0'))
-x10 = x10.rename('kl')
+
+x10 = gmm_kl(x5)
 
 x11 = x10.to_dataframe().reset_index()
 print(
@@ -501,6 +554,26 @@ print(
         aes('pc', 'np.log2(ve)')+
         geom_point(aes(group='clust', color='clust'))
 )
+
+# %%
+x1 = analysis.clust2.enrich.clust1
+x2 = svd(x1.gmm.means.rename(pc='pc_1'), dims=['clust', 'pc_1'])
+x2 = x2.rename(pc_1='pc', pc='pc_1')
+x3 = x1.svd.u * x1.svd.s
+x4 = x1.proba(x3).argmax(dim='clust').rename('clust').astype(str)
+x3 = (x3-x2['mean'])/x2['scale']
+x3 = x3 @ x2.v
+x3 = x3.rename(pc_1='pc')
+x3 = x3.sel(pc=x3.pc<2)
+x3['pc'] = xa.DataArray(['x', 'y'], [('pc', [0,1])])[x3.pc]
+x3 = x3.to_dataset('pc')
+x3 = xa.merge([x3, x4])
+x3 = x3.to_dataframe().reset_index()
+print(
+    ggplot(x3)+aes('x', 'y')+
+        geom_point(aes(color='clust'))
+)
+
 
 # %%
 x1 = xa.merge([
