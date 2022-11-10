@@ -423,27 +423,26 @@ class _analysis:
             class _enrichment(_enrichment):
                 @property
                 def storage(self):
-                    return self.prev.storage/'enrich'  
+                    return self.prev.storage/'enrich'
 
                 class _clust1(_gmm):
                     @property
                     def storage(self):
-                        return self.prev.storage/'clust1'  
+                        return self.prev.storage/'clust1'/str(self.k)
 
                     @property
                     def data(self):
                         return self.prev.data.coef.fillna(0).\
                             transpose('sig', 'clust').rename(clust='clust1')
 
-                    k = 10
                     dims = ['sig', 'clust1']
                     @property
                     def svd_k(self):
                         return min(self.data.sizes.values())
 
-                @compose(property, lazy)
-                def clust1(self):
+                def clust1(self, k):
                     clust = self._clust1()
+                    clust.k = k
                     clust.prev = self              
                     return clust
 
@@ -476,7 +475,7 @@ x1 = x1.sort_values('sig_p')
 x1 = x1[x1.sig_p<1e-4]
 
 # %%
-x1 = analysis.clust2.enrich.clust1.data.copy()
+x1 = analysis.clust2.enrich.clust1(10).data.copy()
 x1['clust1'] = x1.clust1.astype('str')[x1.clust1]
 
 x2 = pd.DataFrame(dict(
@@ -495,7 +494,7 @@ plt.figure()
 x2.plot('mu', 'sigma', kind='scatter')
 
 #x1.data = np.apply_along_axis(np.random.permutation, 0, x1.data)
-x4 = analysis.clust2.enrich.clust1.svd
+x4 = analysis.clust2.enrich.clust1(10).svd
 x4['clust1'] = x4.clust1.astype('str')[x4.clust1]
 
 plt.figure()
@@ -509,7 +508,7 @@ plt.figure()
 x4['u'].sel(pc=0).to_series().sort_values().plot()
 
 # %%
-x5 = analysis.clust2.enrich.clust1.gmm
+x5 = analysis.clust2.enrich.clust1(10).gmm
 x5['clust'] = x5.clust.astype('str')[x5.clust]
 
 print(
@@ -556,23 +555,28 @@ print(
 )
 
 # %%
-x1 = analysis.clust2.enrich.clust1
-x2 = svd(x1.gmm.means.rename(pc='pc_1'), dims=['clust', 'pc_1'])
-x2 = x2.rename(pc_1='pc', pc='pc_1')
-x3 = x1.svd.u * x1.svd.s
-x4 = x1.proba(x3).argmax(dim='clust').rename('clust').astype(str)
-x3 = (x3-x2['mean'])/x2['scale']
-x3 = x3 @ x2.v
-x3 = x3.rename(pc_1='pc')
-x3 = x3.sel(pc=x3.pc<2)
-x3['pc'] = xa.DataArray(['x', 'y'], [('pc', [0,1])])[x3.pc]
+x1 = analysis.clust2.enrich.clust1(20)
+x3 = x1.svd
+x3 = x3.u * x3.s
+x3 = x3.sel(pc=x3.pc<3)
+x3['pc'] = xa.DataArray(['x', 'y', 'z'], [('pc', [0,1,2])])[x3.pc]
 x3 = x3.to_dataset('pc')
-x3 = xa.merge([x3, x4])
+x3 = xa.merge([x3, x1.clust])
+x3['pred'] = x3.pred.astype(str)
 x3 = x3.to_dataframe().reset_index()
+
+x4 = x3[['sig', 'pred']].copy()
+x4['sig'] = x4.sig.str.contains('INTERF')
+x4 = sm.stats.Table.from_data(x4)
+print(plot_table(x4))
+
+x3['pred1'] = x3.pred=='2'
 print(
     ggplot(x3)+aes('x', 'y')+
-        geom_point(aes(color='clust'))
+        geom_point(aes(color='pred1'))
 )
+
+
 
 
 # %%
