@@ -454,6 +454,53 @@ class _analysis:
 
         return _gmm1()
 
+    def clust3(self, k):
+        class _gmm1(_gmm):
+            storage = self.storage/'clust3'/str(k)
+            prev = self
+
+            @compose(property, lazy)
+            def data(self):
+                return self.prev.data.log1p_rpk.todense()
+
+            @property
+            def feature_entrez(self):
+                return self.prev.feature_entrez
+
+            class _enrichment(_enrichment):
+                @property
+                def storage(self):
+                    return self.prev.storage/'enrich'
+
+                class _clust1(_gmm):
+                    @property
+                    def storage(self):
+                        return self.prev.storage/'clust1'/str(self.k)
+
+                    @property
+                    def data(self):
+                        return self.prev.data.coef.fillna(0).\
+                            transpose('sig', 'clust').rename(clust='clust1')
+
+                    dims = ['sig', 'clust1']
+                    @property
+                    def svd_k(self):
+                        return min(self.data.sizes.values())
+
+                def clust1(self, k):
+                    clust = self._clust1()
+                    clust.k = k
+                    clust.prev = self              
+                    return clust
+
+            @compose(property, lazy)
+            def enrich(self):
+                enrich = self._enrichment()
+                enrich.prev = self
+                return enrich
+
+        return _gmm1()
+
 analysis = _analysis()
 
 self = analysis
@@ -558,8 +605,8 @@ print(
 x1 = analysis.clust2.enrich.clust1(20)
 x3 = x1.svd
 x3 = x3.u * x3.s
-x3 = x3.sel(pc=x3.pc<3)
-x3['pc'] = xa.DataArray(['x', 'y', 'z'], [('pc', [0,1,2])])[x3.pc]
+x3 = x3.sel(pc=x3.pc<2)
+x3['pc'] = xa.DataArray(['x', 'y'], [('pc', [0,1])])[x3.pc]
 x3 = x3.to_dataset('pc')
 x3 = xa.merge([x3, x1.clust])
 x3['pred'] = x3.pred.astype(str)
