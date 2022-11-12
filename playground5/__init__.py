@@ -6,7 +6,6 @@ if __name__ == '__main__':
 import numpy as np
 import pandas as pd
 import xarray as xa
-from plotnine import *
 
 from ..common import helpers
 from ..common.caching import compose, lazy, XArrayCache
@@ -201,72 +200,6 @@ class _gmm:
         x5 = x5/x5.sum(dim='clust')
         return x5
 
-def random_data(n, m, k):
-    def _(i):
-        u, s, v = np.linalg.svd(np.random.randn(k*2).reshape((k,2)), full_matrices=False)
-        s = np.sort(10*np.random.random(2))[::-1]
-        x1 = (u*s.reshape((1,-1)))@v+5*np.random.random(2).reshape((1,-1))
-        return x1, [str(i)]*x1.shape[0]
-
-    x4 = [_(i) for i in range(n)]
-    x4 = [np.concatenate(x, axis=0) for x in zip(*x4)]
-    x3 = xa.Dataset(dict(
-        pt=xa.DataArray(
-            x4[0], 
-            [('sample', range(x4[0].shape[0])), ('feature', ['x', 'y'])]
-        )
-    ))
-    x3['clust1'] = 'sample', x4[1]
-
-    x4 = svd(x3.pt, scale=False)
-
-    x5 = x4.query(pc='pc>=0')
-    x5 = x5.u*x5.s
-    x5 = gmm(x5, m)
-    x5['clust'] = x5.clust.astype(str)[x5.clust]
-
-    x6 = x5.covs.groupby('clust').\
-        apply(
-            lambda x: 
-                svd(x.rename(pc='pc_2'), scale=False)[['u', 's']].\
-                    rename(pc='pc1')
-        ).rename(pc_2='pc')
-    x6 = 2*x6.u*np.sqrt(x6.s) + x5.means
-    x6 = (x6 @ x4.v)*x4.scale + x4['mean']
-    x7 = (x5.means @ x4.v)*x4.scale + x4['mean']
-
-    x6 = x6.to_dataset(dim='feature')
-    x6 = x6.to_dataframe().reset_index()
-
-    x7 = x7.to_dataset(dim='feature')
-    x7 = x7.to_dataframe().reset_index()
-    x7['pc1'] = -1
-
-    x8 = xa.merge([
-        x3.pt.to_dataset(dim='feature'),
-        x3.drop_dims('feature')
-    ]).to_dataframe().reset_index()
-    x9 = pd.concat([x6, x7])
-
-    x10 = gmm_kl(x5).to_dataframe().reset_index()
-
-    print(
-        ggplot()+aes('x', 'y')+
-            geom_point(x8, aes(fill='clust1'), shape=0)+
-            geom_line(x9[x9.pc1!=0], aes(color='clust'), size=2)+
-            geom_line(x9[x9.pc1!=1], aes(color='clust'), size=2)
-    )
-
-    print(
-        ggplot(x10)+
-            aes('clust0', 'clust1')+
-            geom_tile(aes(fill='kl'))+
-            geom_text(aes(label='np.round(kl)'), color='white')
-    )
-
-# %%
-#random_data(1, 4, 1000)
-
 # %%
 class _analysis:
     storage = config.cache/'playground5'
@@ -452,8 +385,9 @@ class _analysis:
 
         return _gmm1()
 
-    def clust3(self, k):
+    def clust3(self, t):
         class _gmm1(_gmm):
+            k = t
             storage = self.storage/'clust3'/str(k)
             prev = self
 
@@ -469,6 +403,14 @@ class _analysis:
                 @property
                 def storage(self):
                     return self.prev.storage/'enrich'
+
+                @property
+                def feature_entrez(self):
+                    return self.prev.feature_entrez
+
+                @property
+                def means(self):
+                    return self.prev.means
 
                 class _clust1(_gmm):
                     @property
@@ -496,10 +438,11 @@ class _analysis:
                 enrich = self._enrichment()
                 enrich.prev = self
                 return enrich
-
+        
         return _gmm1()
 
 analysis = _analysis()
 
 self = analysis
 
+# %%
