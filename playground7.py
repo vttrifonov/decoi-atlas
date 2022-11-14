@@ -52,26 +52,34 @@ class _analysis1:
         x3['log1p_rpm'] = np.log1p(x3['counts']/x3['total'])
         return x3
 
-    @compose(property, lazy, XArrayCache())
-    def gsva(self):
+    @compose(property, lazy)
+    def gsva_data(self):
         from .sigs._sigs import sigs
-        from .sigs.gsva import gsva
         x2 = self.x2
-        x1 = sigs.all1
+        x1 = sigs.all1.rename(gene='entrez')
         x1 = x1.sel(sig=x1.sig_prefix.isin(["KEGG1", "HALLMARK"]))
         x1 = xa.merge([
             x1,
-            self.feature_entrez.rename(entrez='gene'),
-            self.log1p_rpm.log1p_rpm.rename(group='sample')
+            self.feature_entrez,
+            self.log1p_rpm.log1p_rpm
         ], join='inner')
         x1['log1p_rpm'] = xa.apply_ufunc(
             np.matmul, x1.feature_entrez, x1.log1p_rpm,
-            input_core_dims=[['gene', x2.feature], [x2.feature, 'sample']],
-            output_core_dims=[['gene', 'sample']]
+            input_core_dims=[['entrez', x2.feature], [x2.feature, 'group']],
+            output_core_dims=[['entrez', 'group']]
         )
         x1['log1p_rpm'] = x1.log1p_rpm/x1.feature_entrez.sum(dim=x2.feature)
-        x1['gene'] = x1.gene.astype(np.int32)
+        x1['entrez'] = x1.entrez.astype(np.int32)
+        return x1
 
+    @compose(property, lazy, XArrayCache())
+    def gsva(self):
+        from .sigs.gsva import gsva
+
+        x1 = self.gsva_data.rename(
+            entrez='gene',
+            group='sample'
+        )
         x3 = gsva(
             x1.log1p_rpm,
             x1.set.to_series_sparse().reset_index().drop(columns=['set'])
@@ -212,6 +220,61 @@ x1 = _c1_pbmc_analysis1()
 
 # %%
 x1.summary2
+
+# %%
+x2 = xa.merge([x1.gsva, x1.gsva_data, x1.log1p_rpm.drop_dims('feature_id')], join='inner')
+x2 = x2.sel(sig='HALLMARK_HYPOXIA')
+
+# %%
+x3 = x2[['gsva', x1.x2.diag]].to_dataframe().reset_index()
+print(
+    ggplot(x3)+
+        aes(x1.x2.diag, 'gsva')+
+        geom_violin(aes(fill=x1.x2.diag))+
+        geom_boxplot(width=0.1)+
+        geom_jitter(width=0.1, size=0.5, alpha=0.5)+
+        labs(x='', title=x3.sig.iloc[0])+
+        theme(
+            figure_size=(4, 2),
+            legend_position='none'
+        )
+)
+
+# %%
+x3 = x2.copy()
+x4 = x3.log1p_rpm
+x4 = (x4-x4.mean(dim='group'))/x4.std(dim='group')
+x4 = x4.rename('z')
+x3 = x3.sel(group=x3[x1.x2.diag]=='severe')
+x3 = x3[['gsva', x1.x2.diag]].to_dataframe().reset_index()
+x3 = x3.sort_values('gsva').iloc[-1]
+x3 = xa.merge([x2, x4]).sel(group=x3.group)
+x3['entrez_feature'] = x3.feature_entrez.\
+    to_series_sparse().reset_index().\
+    groupby('entrez').feature_id.\
+    apply(lambda x: ','.join(x)).to_xarray()
+x3 = x3.drop_dims('feature_id')
+x3 = x3.todense()
+x3 = x3.to_dataframe().reset_index()
+x3['set'] = np.where(x3.set==1, f'{x3.sig.iloc[0]}', 'Other')
+x4 = f'donor: {x3[x1.x2.donor].iloc[0]}, diag: {x3[x1.x2.diag].iloc[0]}, gsva: {np.round(x3.gsva.iloc[0],2)}'
+print(
+    ggplot(x3)+
+        aes('set', 'z')+
+        geom_violin(aes(fill='set'))+
+        geom_boxplot(width=0.1)+
+        geom_jitter(data=x3[x3.set!='Other'], width=0.03, size=0.5, alpha=0.3)+
+        labs(
+            x='', 
+            y = 'Z-scoreed log1p_RPM',
+            title=x4
+        )+
+        theme(
+            figure_size=(6, 3),
+            legend_position='none'
+        )
+)
+
 
 # %%
 class _c2_wb_pbmc_analysis1(_analysis1):
