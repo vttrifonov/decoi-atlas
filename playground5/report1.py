@@ -81,12 +81,12 @@ def random_data(n, m, k):
 #random_data(1, 4, 1000)
 
 # %%
-x1 = analysis.clust3(15).clust.to_dataframe()
+x1 = analysis.clust3(20).clust.to_dataframe()
 x1.value_counts()
 
 # %%
 x2 = 'cell_integrated_snn_res.0.3'
-x1 = analysis.clust3(20)
+x1 = analysis.clust3(40)
 x1 = xa.merge([analysis.data, x1.clust], join='inner')
 x1 = x1[[x2, 'pred']].to_dataframe()
 x1 = sm.stats.Table.from_data(x1)
@@ -179,6 +179,8 @@ print(
     x5.pred.argmax('clust').to_series().value_counts()
 )
 
+# %%
+
 x4 = analysis.clust3(20).enrich.clust1(30).svd
 x4['clust1'] = x4.clust1.astype('str')[x4.clust1]
 x6 = (x5.means@x4.v)*x4.scale + x4['mean']
@@ -230,9 +232,13 @@ x3['pc'] = xa.DataArray(['x', 'y'], [('pc', [0,1])])[x3.pc]
 x3 = x3.to_dataset('pc')
 x3 = xa.merge([x3, x1.clust])
 x4 = x1.gmm.pred.data
-x3['proba'] = 'sig', x4[np.arange(x4.shape[0]), x3.pred.data]
+x3['pred_proba'] = 'sig', x4[np.arange(x4.shape[0]), x3.pred.data]
 x3['pred'] = x3.pred.astype(str)
+x3['proba'] = ('sig', 'clust'), x4
+x3['clust'] = ('c'+x3.clust.to_series().astype('str')).to_xarray()
+x3 = xa.merge([x3.drop_dims('clust'), x3.proba.to_dataset('clust')])
 x3 = x3.to_dataframe().reset_index()
+x3['sig'] = x3.sig.str.replace('^[^_]*_', '', regex=True)
 
 # %%
 
@@ -242,16 +248,40 @@ x4 = sm.stats.Table.from_data(x4)
 print(plot_table(x4))
 
 # %%
-x3['pred1'] = x3.pred=='3'
-x3['pred1'] = x3.pred
+x4 = '10'
+x3['pred1'] = x3.pred==x4
+x3 = x3[~x3.pred.isin(['25', '12', '1', '23', '4'])]
 print(
-    ggplot(x3[x3.proba>0.9].sort_values('pred1'))+aes('x', 'y')+
-        geom_point(aes(color='pred1'))
+    ggplot(x3.sort_values('c'+x4))+aes('x', 'y')+
+        geom_point(aes(color='pred1', alpha='c'+x4))
 )
 
 # %%
+x1 = analysis.clust3(20)
+x2 = x1.enrich.clust1(30)
+x3 = xa.merge([
+    analysis.data.drop_dims('feature_id'),
+    x1.clust.rename('cell_clust'),
+    x1.gmm.pred.rename('cell_proba').rename(clust='cell_clust_id'),
+    x2.means.rename(clust='sig_clust_id', clust1='cell_clust_id').rename('sig_clust_means')
+], join='inner')
+x3 = xa.merge([
+    x3.drop_dims('umap_dim'),
+    x3.umap.to_dataset(dim='umap_dim')
+])
+
+# %%
+x4 = xa.dot(x3.cell_proba, x3.sig_clust_means)
+x4 = x4.sel(sig_clust_id=9).rename('cell_sig_clust')
+x4 = xa.merge([x4, x3.drop_dims(['sig_clust_id', 'cell_clust_id'])])
+x4 = x4.to_dataframe().reset_index()
 print(
-    ggplot(x3)+
-        aes('proba')+
-        geom_freqpoly(bins=100)
+    ggplot(x4)+aes('UMAP_1', 'UMAP_2', color='cell_sig_clust')+
+        geom_point()+
+        scale_color_gradient2(
+            low='blue', mid='white', high='red',
+            midpoint=0
+        )
 )
+
+# %%
