@@ -86,7 +86,7 @@ x1.value_counts()
 
 # %%
 x2 = 'cell_integrated_snn_res.0.3'
-x1 = analysis.clust3(40)
+x1 = analysis.clust3(20)
 x1 = xa.merge([analysis.data, x1.clust], join='inner')
 x1 = x1[[x2, 'pred']].to_dataframe()
 x1 = sm.stats.Table.from_data(x1)
@@ -139,7 +139,7 @@ print(
 
 
 # %%
-x1 = analysis.clust3(20).enrich.clust1(20).data.copy()
+x1 = analysis.clust3(20).enrich.clust1(30).data.copy()
 x1['clust1'] = x1.clust1.astype('str')[x1.clust1]
 
 x2 = pd.DataFrame(dict(
@@ -180,7 +180,6 @@ print(
 )
 
 # %%
-
 x4 = analysis.clust3(20).enrich.clust1(30).svd
 x4['clust1'] = x4.clust1.astype('str')[x4.clust1]
 x6 = (x5.means@x4.v)*x4.scale + x4['mean']
@@ -260,20 +259,34 @@ print(
 x1 = analysis.clust3(20)
 x2 = x1.enrich.clust1(30)
 x3 = xa.merge([
-    analysis.data.drop_dims('feature_id'),
+    analysis.data,
     x1.clust.rename('cell_clust'),
     x1.gmm.pred.rename('cell_proba').rename(clust='cell_clust_id'),
+    x2.clust.rename('sig_clust'),
+    x2.gmm.pred.rename('sig_proba').rename(clust='sig_clust_id'),
     x2.means.rename(clust='sig_clust_id', clust1='cell_clust_id').rename('sig_clust_means')
 ], join='inner')
+x4 = x3.log1p_rpk
+x3['z_log1p_rpk'] = (x4-x4.mean(dim='cell_id'))/x4.std(dim='cell_id')
 x3 = xa.merge([
     x3.drop_dims('umap_dim'),
     x3.umap.to_dataset(dim='umap_dim')
 ])
 
 # %%
-x4 = xa.dot(x3.cell_proba, x3.sig_clust_means)
-x4 = x4.sel(sig_clust_id=9).rename('cell_sig_clust')
-x4 = xa.merge([x4, x3.drop_dims(['sig_clust_id', 'cell_clust_id'])])
+x4 = x3.sel(sig=x3.sig.to_series().str.contains('INTERFER').to_xarray())
+
+# %%
+x4 = x3.sel(sig=x3.sig_clust==24)
+
+# %%
+x4 = x4.sig_proba.mean(dim='sig')
+x4 = xa.dot(x4, x3.sig_clust_means)
+x4 = xa.dot(x4, x3.cell_proba)
+x4 = xa.merge([
+    x4.rename('cell_sig_clust'), 
+    x3.drop_dims(set(x3.dims)-set(['cell_id']))
+])
 x4 = x4.to_dataframe().reset_index()
 print(
     ggplot(x4)+aes('UMAP_1', 'UMAP_2', color='cell_sig_clust')+
@@ -284,4 +297,34 @@ print(
         )
 )
 
+# %%
+x4 = xa.dot(x3.cell_proba, x3.sig_clust_means)
+x4 = x4.sel(sig_clust_id=9)
+x4 = xa.merge([x4.rename('cell_sig_clust'), x3.drop_dims(['sig_clust_id', 'cell_clust_id'])])
+x4 = x4.to_dataframe().reset_index()
+print(
+    ggplot(x4)+aes('UMAP_1', 'UMAP_2', color='cell_sig_clust')+
+        geom_point()+
+        scale_color_gradient2(
+            low='blue', mid='white', high='red',
+            midpoint=0
+        )
+)
+
+# %%
+x4 = x3.z_log1p_rpk.sel(feature_id='IFITM2').todense().drop('feature_id')
+x4 = x3.sel(cell_id=(x4>0))
+x4 = x4.cell_proba.mean(dim='cell_id')
+print(x4.to_series().sort_values())
+x4 = xa.dot(x4, x3.sig_clust_means)
+x4 = x4/((x4**2).sum()**0.5)
+x4 = xa.dot(x4, x3.sig_proba)
+x4 = x4.rename('score').to_dataframe().reset_index()
+
+# %%
+x4 = x3[['cell_clust', 'cell_integrated_snn_res.0.3']].to_dataframe()
+x4['cell_clust'] = x4.cell_clust==13
+x4['cell_integrated_snn_res.0.3'] = x4['cell_integrated_snn_res.0.3'].astype(str)
+x4 = sm.stats.Table.from_data(x4)
+print(plot_table(x4))
 # %%
