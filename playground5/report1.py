@@ -85,40 +85,46 @@ x1 = analysis.clust3(20).clust.to_dataframe()
 x1.value_counts()
 
 # %%
-x2 = 'cell_integrated_snn_res.0.3'
-x1 = analysis.clust3(20)
-x1 = xa.merge([analysis.data, x1.clust], join='inner')
-x1 = x1[[x2, 'pred']].to_dataframe()
-x1 = sm.stats.Table.from_data(x1)
-x1 = pd.concat([
-    v.stack().rename(k)
-    for k, v in [
-        ('table', x1.table_orig), 
-        ('resid', x1.resid_pearson), 
-        ('fit', x1.fittedvalues)
-    ]
-], axis=1).reset_index()
+def plot_table1(x1):
+    x2 = x1.columns[0]
+    x1 = sm.stats.Table.from_data(x1)
+    x1 = pd.concat([
+        v.stack().rename(k)
+        for k, v in [
+            ('table', x1.table_orig), 
+            ('resid', x1.resid_pearson), 
+            ('fit', x1.fittedvalues)
+        ]
+    ], axis=1).reset_index()
 
-x3 = x1.sort_values('resid', ascending=False).\
-    drop_duplicates('pred').\
-    sort_values([x2, 'resid'])
+    x3 = x1.sort_values('resid', ascending=False).\
+        drop_duplicates('pred').\
+        sort_values([x2, 'resid'])
 
-x4 = list(x3[x2].drop_duplicates())
-x4 = x4+list(set(x1[x2])-set(x4))
-x1[x2] = x1[x2].astype(pd.CategoricalDtype(x4, ordered=True))
-x1['pred'] = x1['pred'].astype(pd.CategoricalDtype(x3['pred'].drop_duplicates(), ordered=True))
-x1['label'] = x1['table'].astype(str) + '\n' + x1['fit'].astype(int).astype(str)
-(
-    ggplot(x1)+
-        aes(x2, 'pred')+
-        geom_tile(aes(fill='resid'))+
-        geom_text(aes(label='label'), size=7)+
-        scale_fill_gradient2(
-            low='blue', mid='white', high='red',
-            midpoint=0
-        )+
-        theme(figure_size=(5, 6))
-)
+    x4 = list(x3[x2].drop_duplicates())
+    x4 = x4+list(set(x1[x2])-set(x4))
+    x1[x2] = x1[x2].astype(pd.CategoricalDtype(x4, ordered=True))
+    x1['pred'] = x1['pred'].astype(pd.CategoricalDtype(x3['pred'].drop_duplicates(), ordered=True))
+    x1['label'] = x1['table'].astype(str) + '\n' + x1['fit'].astype(int).astype(str)
+    return (
+        ggplot(x1)+
+            aes(x2, 'pred')+
+            geom_tile(aes(fill='resid'))+
+            geom_text(aes(label='label'), size=7)+
+            scale_fill_gradient2(
+                low='blue', mid='white', high='red',
+                midpoint=0
+            )+
+            theme(figure_size=(5, 6))
+    )
+
+# %%
+x1 = xa.merge([
+    analysis.data, 
+    analysis.clust3(20).clust
+], join='inner')
+x1 = x1[['cell_integrated_snn_res.0.3', 'pred']].to_dataframe()
+plot_table1(x1)
 
 # %%
 x1 = analysis.clust3(20)
@@ -137,6 +143,21 @@ print(
         theme(legend_position='none')
 )
 
+# %%
+x1 = analysis.clust3(20).enrich.clust1(30)
+x3 = x1.svd
+x3 = x3.u * x3.s
+x3 = x3.sel(pc=x3.pc<2)
+x3['pc'] = xa.DataArray(['x', 'y'], [('pc', [0,1])])[x3.pc]
+x3 = x3.to_dataset('pc')
+x3 = xa.merge([x3, x1.clust])
+x3 = x3.to_dataframe()
+x3['pred'] = x3.pred.astype(str)
+
+print(
+    ggplot(x3)+aes('x', 'y')+
+        geom_point(aes(color='pred'))
+)
 
 # %%
 x1 = analysis.clust3(20).enrich.clust1(30).data.copy()
@@ -157,8 +178,9 @@ x2 = pd.DataFrame(dict(
 plt.figure()
 x2.plot('mu', 'sigma', kind='scatter')
 
+# %%
 #x1.data = np.apply_along_axis(np.random.permutation, 0, x1.data)
-x4 = analysis.clust3(20).enrich.clust1(20).svd
+x4 = analysis.clust3(20).enrich.clust1(30).svd
 x4['clust1'] = x4.clust1.astype('str')[x4.clust1]
 
 plt.figure()
@@ -167,7 +189,7 @@ x4['s'].query(pc='pc<70').to_series().\
     pipe(np.log2).\
     plot(style='.')
 plt.figure()
-x4['v'].sel(pc=0).to_series().sort_values().plßot()
+x4['v'].sel(pc=0).to_series().sort_values().plot()
 plt.figure()
 x4['u'].sel(pc=0).to_series().sort_values().plot()
 
@@ -195,8 +217,8 @@ print(
 )
 
 
+# %%
 x10 = analysis.clust3(20).enrich.clust1(30).kl
-
 x11 = x10.to_dataframe().reset_index()
 print(
     ggplot(x11)+
@@ -212,6 +234,7 @@ print(
         geom_freqpoly()
 )
 
+# %%
 x6 = np.linalg.svd(x5.covs.data, compute_uv=False)**2
 x6 = x6/x6.sum(axis=1, keepdims=True)
 x6 = xa.DataArray(x6, [x5.clust, ('pc', range(x6.shape[1]))], name='ve')
@@ -240,6 +263,12 @@ x3 = x3.to_dataframe().reset_index()
 x3['sig'] = x3.sig.str.replace('^[^_]*_', '', regex=True)
 
 # %%
+print(
+    ggplot(x3)+aes('x', 'y')+
+        geom_point(aes(color='pred'))
+)
+
+# %%
 
 x4 = x3[['sig', 'pred']].copy()
 x4['sig'] = x4.sig.str.contains('INTERF')
@@ -249,7 +278,7 @@ print(plot_table(x4))
 # %%
 x4 = '10'
 x3['pred1'] = x3.pred==x4
-x3 = x3[~x3.pred.isin(['25', '12', '1', '23', '4'])]
+#x3 = x3[~x3.pred.isin(['25', '12', '1', '23', '4'])]
 print(
     ggplot(x3.sort_values('c'+x4))+aes('x', 'y')+
         geom_point(aes(color='pred1', alpha='c'+x4))
