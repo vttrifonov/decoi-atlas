@@ -17,3 +17,10 @@ conda install psycopg2
 
 pip install adjustText
 conda install scikit-misc
+
+conda install dash
+conda install dash-html-components
+conda install dash-core-components
+conda install plotly
+
+conda install ipywidgets
