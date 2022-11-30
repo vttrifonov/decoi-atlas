@@ -183,6 +183,32 @@ analysis.clust3(20).enrich.data.rename(clust='cell_clust')
 analysis.clust3(20).enrich.clust1(30).data.rename(clust1='cell_clust').sizes
 
 # %% [markdown]
+# Explore the signatures associated with each cell cluster
+
+# %%
+x1 = analysis.clust3(20).enrich.clust1(30).data.rename(clust1='cell_clust')
+x1 = x1.to_dataframe().reset_index()
+x1['sig'] = x1.sig.str.replace('^[^_]*_', '', regex=True)
+
+@interact(
+    sig_prefix=[''] + list(x1.sig_prefix.drop_duplicates()), 
+    cell_clust=[''] + list(np.sort(x1.cell_clust.drop_duplicates()).astype(str)),
+    sig='',
+    coef = ['ascending', 'descending'],
+    rows=(0, 100, 20)
+)
+def show_x4(sig_prefix='', cell_clust='', sig='', coef='descending', rows=20):
+    pd.set_option('display.max_rows', rows)
+    x5 = x1
+    if sig_prefix!='':
+        x5 = x5[x5.sig_prefix==sig_prefix]
+    if cell_clust!='':
+        x5 = x5[x5.cell_clust==int(cell_clust)]
+    if sig!='':
+        x5 = x5[x5.sig.str.contains(sig, regex=True)]
+    return x5.sort_values('coef', ascending=(coef=='ascending')).head(rows)
+
+# %% [markdown]
 # We perform PCA on the centroid enrichment data. PC1 vs PC2 is shown below. 
 # The data in red is obtained by permuting PC1. Not much structure can be seen 
 # in the first 2 PCs
@@ -322,11 +348,16 @@ print(
         labs(x='PC1', y='PC2')
 )
 
+# %% [markdown]
+# Explore the gene sets represented by each signature cluster
+
 # %%
 x1 = analysis.clust3(20)
 x2 = x1.enrich.clust1(30)
 x3 = xa.merge([
-    analysis.data,
+    analysis.data.drop_dims('feature_id'),
+    x1.enrich.sigs.drop('sig_prefix'),
+    x1.enrich.means.rename('clust_means').rename(clust='cell_clust_id'),
     x1.clust.rename('cell_clust'),
     x1.gmm.pred.rename('cell_proba').rename(clust='cell_clust_id'),
     x2.data.sig_prefix.reset_coords(),
@@ -341,23 +372,54 @@ x3 = xa.merge([
     x3.drop_dims('umap_dim'),
     x3.umap.to_dataset(dim='umap_dim')
 ])
+x3['sig'] = x3.sig.str.replace('^[^_]*_', '')
 
 # %%
 x4 = xa.merge([
     x3.sig_prefix,
-    x3.sig_proba.to_dataset('sig_clust_id')
-]).to_dataframe().reset_index()
-x4['sig'] = x4.sig.str.replace('^[^_]*_', '', regex=True)
+    x3.sig_proba.rename(sig_clust_id='sig_clust')
+])
+x4 = x4.to_dataframe().reset_index()
 
-# %% [markdown]
-# Explore the gene sets represented by each signature cluster
+@interact(
+    sig_prefix=[''] + list(x4.sig_prefix.drop_duplicates()),
+    sig_clust=[''] + list(x4.sig_clust.drop_duplicates().astype(str)),
+    sig='',
+    rows=(0, 100, 20)
+)
+def show_x4(
+    sig_prefix='', 
+    sig_clust='', 
+    sig='',
+    rows=20
+):
+    pd.set_option('display.max_rows', rows)
+    x5 = x4
+    if sig_prefix!='':
+        x5 = x5[x5.sig_prefix==sig_prefix]
+    if sig_clust!='':
+        x5 = x5[x5.sig_clust==int(sig_clust)]
+    if sig!='':
+        x5 = x5[x5.sig.str.contains(sig, regex=True)]
+    return x5.sort_values('sig_proba', ascending=False).head(rows)
 
 # %%
-@interact(sig_prefix=x4.sig_prefix.drop_duplicates(), sig_clust_id=np.arange(30), rows=(0, 100, 20))
-def show_x4(sig_prefix='HALLMARK', sig_clust_id=0, rows=20):
-    pd.set_option('display.max_rows', rows)
-    x5 = x4[['sig', 'sig_prefix', sig_clust_id]]
-    x5 = x5[x5.sig_prefix==sig_prefix]
-    return x5.sort_values(sig_clust_id, ascending=False).head(rows)
+sig = 'INTERFERON_GAMMA_RESPONSE'
+x4 = x3
+x4 = x4.sel(sig=sig)
+x4['set'] = xa.apply_ufunc(
+    np.matmul, x4.feature_entrez, x4.set.todense(), 
+    input_core_dims=[['feature_id', 'gene'], ['gene']],
+    output_core_dims=[['feature_id']]
+)>0
+x4 = x4[['set', 'clust_means']].rename(cell_clust_id='cell_clust').to_dataframe().reset_index()
+x4['cell_clust'] = x4.cell_clust.astype(str)
+
+# %%
+(
+    ggplot(x4)+aes('cell_clust', 'clust_means', color='set')+
+        geom_boxplot()
+)
+
 
 

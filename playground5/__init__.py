@@ -98,15 +98,21 @@ def gmm_kl(x5):
     return x10
 
 class _enrichment:
+    @compose(property, lazy)
+    def sigs(self):
+        from ..sigs._sigs import sigs 
+        return xa.merge([
+            sigs.all1,
+            self.feature_entrez.rename(entrez='gene')
+        ], join='inner')
+
     @compose(property, lazy, XArrayCache())
     def data(self):
-        from ..sigs._sigs import sigs 
         from ..sigs.fit import enrichment
         import sparse
 
         x1 = xa.merge([
-            sigs.all1,
-            self.feature_entrez.rename(entrez='gene'),
+            self.sigs,
             self.means
         ], join='inner')
         x1['means'] = xa.apply_ufunc(
