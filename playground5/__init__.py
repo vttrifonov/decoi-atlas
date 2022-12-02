@@ -101,18 +101,9 @@ class _enrichment:
     @compose(property, lazy)
     def sigs(self):
         from ..sigs._sigs import sigs 
-        return xa.merge([
-            sigs.all1,
-            self.feature_entrez.rename(entrez='gene')
-        ], join='inner')
-
-    @compose(property, lazy, XArrayCache())
-    def data(self):
-        from ..sigs.fit import enrichment
-        import sparse
-
         x1 = xa.merge([
-            self.sigs,
+            sigs.all1,
+            self.feature_entrez.rename(entrez='gene'),
             self.means
         ], join='inner')
         x1['means'] = xa.apply_ufunc(
@@ -123,6 +114,14 @@ class _enrichment:
         x1['means'] = x1.means/x1.feature_entrez.sum(dim='feature_id')
         x1['means'] = x1.means-x1.means.mean('clust')
         x1['means'] = x1.means/x1.means.std('clust')
+        return x1
+
+    @compose(property, lazy, XArrayCache())
+    def data(self):
+        from ..sigs.fit import enrichment
+        import sparse
+        
+        x1 = self.sigs
         x1.means.data = sparse.as_coo(x1.means.data)
         x1 = enrichment(x1.means, x1.set)
         return x1
