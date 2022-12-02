@@ -1,6 +1,8 @@
 # %%
 if __name__ == '__main__':
-    __package__ = 'decoi_atlas.playground5'
+    from pathlib import Path
+    __file__ = str(Path.home()/'projects'/'empty.py')
+    __package__ = 'decoi_atlas.playground5.report2'
 
 # %%
 import numpy as np
@@ -170,7 +172,7 @@ px.scatter(
 # Signature cluster means
 
 # %%
-print(
+(
     ggplot(analysis.clust3(20).enrich.clust1(30).clust_means)+
         aes('cell_clust', 'sig_clust')+
         geom_tile(aes(fill='means'))+
