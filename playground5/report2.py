@@ -10,10 +10,8 @@ from plotnine import *
 import matplotlib.pyplot as plt
 import statsmodels.api as sm
 import ipywidgets as widgets
-from IPython.display import display, clear_output
+from IPython.display import display
 from scipy.cluster.hierarchy import dendrogram, linkage
-from . import analysis, gmm_kl
-from .._helpers import plot_table
 
 # %%
 def plot_table1(x1):
