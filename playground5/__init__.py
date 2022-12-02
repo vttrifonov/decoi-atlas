@@ -1,7 +1,6 @@
 # %%
 if __name__ == '__main__':
-    from pathlib import Path
-    __file__ = str(Path.home()/'projects'/'empty.py')
+    __file__ = os.path.expanduser('~/projects/empty.py')
     __package__ = 'decoi_atlas.playground5'
 
 # %%
