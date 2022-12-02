@@ -6,3 +6,4 @@ __pycache__
 decoi_atlas
 .vscode
 *.ipynb
+jupyter.log
