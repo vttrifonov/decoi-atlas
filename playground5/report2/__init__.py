@@ -298,6 +298,15 @@ def _analysis_clust3_enrichment_clust1_data1(self):
 _analysis._clust3._enrichment._clust1.data1 = _analysis_clust3_enrichment_clust1_data1
 
 # %%
+def _pager_update(
+    x = None,
+    rows=20, page=1            
+):
+    print(f'{x.shape[0]} rows.')
+    x = x.iloc[(page-1)*rows:page*rows]
+    pd.set_option('display.max_rows', rows)
+    return x
+
 def pager(
     data,
     min=20, max=100, step=20
@@ -306,25 +315,22 @@ def pager(
     pages = widgets.IntSlider(min=1, max=1)
 
     def update_pages(x, rows):
-        pages.max = np.ceil(x.shape[0]//rows)
+        if x.shape[0]==0:
+            pages.min = 0
+            pages.max = 0
+        else:
+            pages.max = np.ceil(x.shape[0]/rows)
+            pages.min = 1            
 
-    data.observe(lambda x: update_pages(x.new, rows.value), names='value')
-    rows.observe(lambda x: update_pages(data.value, x.new), names='value')    
-
-    def page_update(
-        x = None,
-        rows=20, page=1            
-    ):
-        print(f'{x.shape[0]} rows.')
-        x = x.iloc[page*rows:(page+1)*rows]
-        pd.set_option('display.max_rows', rows)
-        display(x)
+    data.observe(lambda x: update_pages(x.new, rows.value), 'value')
+    rows.observe(lambda x: update_pages(data.value, x.new), 'value')    
 
     page = widgets.interactive(
-        page_update,
+        _pager_update,
         x = data,
         rows = rows,
-        page = pages
+        page = pages,
+        auto_display = True
     )
 
     return page
@@ -332,8 +338,7 @@ def pager(
 # %%
 @property
 def _analysis_clust3_enrichment_clust1_sigs_for_clust(self):
-    # %%
-    self = analysis.clust3(20).enrich.clust1(30)
+    #self = analysis.clust3(20).enrich.clust1(30)
     x3 = self.data1
     x4 = xa.merge([
         x3.sig_prefix,
@@ -343,7 +348,6 @@ def _analysis_clust3_enrichment_clust1_sigs_for_clust(self):
     x4 = x4.to_dataframe().reset_index()
     x4['sig'] = x4.sig.str.replace('^[^_]*_', '', regex=True)
 
-    # %%
     class _sigs_for_clust(widgets.ValueWidget):
         description = ''
         def update(
@@ -378,11 +382,11 @@ def _analysis_clust3_enrichment_clust1_sigs_for_clust(self):
             sig = '',
             sig_size = widgets.IntRangeSlider(value=[10, 500], min=1, max=x4.sig_size.max()),
             sig_proba = (0, 1, 0.1)
-        )        
+        ),
         pager(sigs_for_clust)
     ])
 
-    # %%
+def _():
     @widgets.interact(
         sig_prefix=[''] + list(x4.sig_prefix.drop_duplicates()),
         sig_clust=[''] + list(x4.sig_clust.drop_duplicates().astype(str)),    
@@ -414,6 +418,7 @@ def _analysis_clust3_enrichment_clust1_sigs_for_clust(self):
         return x5.sort_values('sig_proba', ascending=False).head(rows)
 
     return sigs_for_clust
+
 _analysis._clust3._enrichment._clust1.sigs_for_clust = _analysis_clust3_enrichment_clust1_sigs_for_clust
 
 # %%
