@@ -312,9 +312,44 @@ def _analysis_clust3_enrichment_clust1_sigs_for_clust(self):
     x4['sig'] = x4.sig.str.replace('^[^_]*_', '', regex=True)
 
     # %%
-    class _filter:
-        data = None
-        def filter(
+    def pager(
+        data,
+        min=20, max=100, step=20
+    ):
+        rows = widgets.IntSlider(min=min, max=max, step=step)
+        pages = widgets.IntSlider(min=1, max=1)
+
+        def update_pages(x, rows):
+            pages.max = np.ceil(x.shape[0]//rows)
+
+        data.observe(lambda x: update_pages(x.new, rows.value), names='value')
+        rows.observe(lambda x: update_pages(x5.value, x.new), names='value')    
+
+        def page_update(
+            x = None,
+            rows=20, page=1            
+        ):
+            print(f'{x.shape[0]} rows.')
+            x = x.iloc[page*rows:(page+1)*rows]
+            pd.set_option('display.max_rows', rows)
+            display(x)
+
+        page = widgets.interactive(
+            page_update,
+            x = data,
+            rows = rows,
+            page = pages
+        )
+
+        return page
+
+
+    # %%
+    from ipywidgets import ValueWidget
+
+    class _filter(ValueWidget):
+        description = ''
+        def update(
             self,
             sig_prefix='', 
             sig_clust='', 
@@ -334,53 +369,45 @@ def _analysis_clust3_enrichment_clust1_sigs_for_clust(self):
                 x5 = x5[x5.sig.str.contains(sig, regex=True)]
 
             x5 = x5.sort_values('sig_proba', ascending=False)
-            self.data = x5
-            x5
+            self.value = x5
 
-        @compose(property, lazy)
-        def widget(self):
-            w = widgets.interactive(
-                self.filter,
-                sig_prefix = [''] + list(x4.sig_prefix.drop_duplicates()),
-                sig_clust = [''] + list(x4.sig_clust.drop_duplicates().astype(str)),    
-                sig = '',
-                sig_size = widgets.IntRangeSlider(value=[10, 500], min=1, max=x4.sig_size.max()),
-                sig_proba = (0, 1, 0.1)
-            )
-            out = w.children[5]
+    x5 = _filter()
 
-            def update(
-                rows=20, page=1            
-            ):
-                x = self.data            
-                print(f'{x.shape[0]} rows.')
-                x = x.iloc[page*rows:(page+1)*rows]
-                pd.set_option('display.max_rows', rows)
-                display(x)
+    filter = widgets.interactive(
+        x5.update,
+        sig_prefix = [''] + list(x4.sig_prefix.drop_duplicates()),
+        sig_clust = [''] + list(x4.sig_clust.drop_duplicates().astype(str)),    
+        sig = '',
+        sig_size = widgets.IntRangeSlider(value=[10, 500], min=1, max=x4.sig_size.max()),
+        sig_proba = (0, 1, 0.1)
+    )
 
-            page = widgets.interactive(
-                update,
-                rows = (20,100,20),
-                page = (1,1,1),
-                updated = False
-            )
-            rows = page.children[0]
-            pages = page.children[1]
+    rows = widgets.IntSlider(min=20, max=100, step=100)
+    pages = widgets.IntSlider(min=1, max=1)
 
-            def update_page():
-                if self.data is None:
-                    return
+    def update_pages(x, rows):
+        pages.max = np.ceil(x.shape[0]//rows)
 
-                pages.max = np.ceil(self.data.shape[0]//rows.value)
-                with out:
-                    display(page)
+    x5.observe(lambda x: update_pages(x.new, rows.value), names='value')
+    rows.observe(lambda x: update_pages(x5.value, x.new), names='value')    
 
-            out.on_displayed(lambda _: update_page())
+    def page_update(
+        x = None,
+        rows=20, page=1            
+    ):
+        print(f'{x.shape[0]} rows.')
+        x = x.iloc[page*rows:(page+1)*rows]
+        pd.set_option('display.max_rows', rows)
+        display(x)
 
-            return w
-
-    filter = _filter()
-    self = filter
+    page = widgets.interactive(
+        page_update,
+        x = x5,
+        rows = rows,
+        page = pages
+    )
+    
+    widgets.VBox([filter, page])
 
     # %%
     @widgets.interact(
