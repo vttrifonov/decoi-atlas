@@ -298,6 +298,38 @@ def _analysis_clust3_enrichment_clust1_data1(self):
 _analysis._clust3._enrichment._clust1.data1 = _analysis_clust3_enrichment_clust1_data1
 
 # %%
+def pager(
+    data,
+    min=20, max=100, step=20
+):
+    rows = widgets.IntSlider(min=min, max=max, step=step)
+    pages = widgets.IntSlider(min=1, max=1)
+
+    def update_pages(x, rows):
+        pages.max = np.ceil(x.shape[0]//rows)
+
+    data.observe(lambda x: update_pages(x.new, rows.value), names='value')
+    rows.observe(lambda x: update_pages(data.value, x.new), names='value')    
+
+    def page_update(
+        x = None,
+        rows=20, page=1            
+    ):
+        print(f'{x.shape[0]} rows.')
+        x = x.iloc[page*rows:(page+1)*rows]
+        pd.set_option('display.max_rows', rows)
+        display(x)
+
+    page = widgets.interactive(
+        page_update,
+        x = data,
+        rows = rows,
+        page = pages
+    )
+
+    return page
+
+# %%
 @property
 def _analysis_clust3_enrichment_clust1_sigs_for_clust(self):
     # %%
@@ -312,42 +344,7 @@ def _analysis_clust3_enrichment_clust1_sigs_for_clust(self):
     x4['sig'] = x4.sig.str.replace('^[^_]*_', '', regex=True)
 
     # %%
-    def pager(
-        data,
-        min=20, max=100, step=20
-    ):
-        rows = widgets.IntSlider(min=min, max=max, step=step)
-        pages = widgets.IntSlider(min=1, max=1)
-
-        def update_pages(x, rows):
-            pages.max = np.ceil(x.shape[0]//rows)
-
-        data.observe(lambda x: update_pages(x.new, rows.value), names='value')
-        rows.observe(lambda x: update_pages(x5.value, x.new), names='value')    
-
-        def page_update(
-            x = None,
-            rows=20, page=1            
-        ):
-            print(f'{x.shape[0]} rows.')
-            x = x.iloc[page*rows:(page+1)*rows]
-            pd.set_option('display.max_rows', rows)
-            display(x)
-
-        page = widgets.interactive(
-            page_update,
-            x = data,
-            rows = rows,
-            page = pages
-        )
-
-        return page
-
-
-    # %%
-    from ipywidgets import ValueWidget
-
-    class _filter(ValueWidget):
+    class _sigs_for_clust(widgets.ValueWidget):
         description = ''
         def update(
             self,
@@ -371,43 +368,19 @@ def _analysis_clust3_enrichment_clust1_sigs_for_clust(self):
             x5 = x5.sort_values('sig_proba', ascending=False)
             self.value = x5
 
-    x5 = _filter()
+    sigs_for_clust = _sigs_for_clust()
 
-    filter = widgets.interactive(
-        x5.update,
-        sig_prefix = [''] + list(x4.sig_prefix.drop_duplicates()),
-        sig_clust = [''] + list(x4.sig_clust.drop_duplicates().astype(str)),    
-        sig = '',
-        sig_size = widgets.IntRangeSlider(value=[10, 500], min=1, max=x4.sig_size.max()),
-        sig_proba = (0, 1, 0.1)
-    )
-
-    rows = widgets.IntSlider(min=20, max=100, step=100)
-    pages = widgets.IntSlider(min=1, max=1)
-
-    def update_pages(x, rows):
-        pages.max = np.ceil(x.shape[0]//rows)
-
-    x5.observe(lambda x: update_pages(x.new, rows.value), names='value')
-    rows.observe(lambda x: update_pages(x5.value, x.new), names='value')    
-
-    def page_update(
-        x = None,
-        rows=20, page=1            
-    ):
-        print(f'{x.shape[0]} rows.')
-        x = x.iloc[page*rows:(page+1)*rows]
-        pd.set_option('display.max_rows', rows)
-        display(x)
-
-    page = widgets.interactive(
-        page_update,
-        x = x5,
-        rows = rows,
-        page = pages
-    )
-    
-    widgets.VBox([filter, page])
+    return widgets.VBox([
+        widgets.interactive(
+            sigs_for_clust.update,
+            sig_prefix = [''] + list(x4.sig_prefix.drop_duplicates()),
+            sig_clust = [''] + list(x4.sig_clust.drop_duplicates().astype(str)),    
+            sig = '',
+            sig_size = widgets.IntRangeSlider(value=[10, 500], min=1, max=x4.sig_size.max()),
+            sig_proba = (0, 1, 0.1)
+        )        
+        pager(sigs_for_clust)
+    ])
 
     # %%
     @widgets.interact(
