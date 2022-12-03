@@ -304,35 +304,36 @@ def pager(
 ):
     rows = widgets.IntSlider(min=min, max=max, step=step)
     pages = widgets.IntSlider(min=1, max=1)
+    label = widgets.Label()
+    out = widgets.Output()
 
-    def _pager_update(
-        x = None,
-        rows=20, page=1            
-    ):
-        display(widgets.Label(f'{x.shape[0]} rows.'))
-        x = x.iloc[(page-1)*rows:page*rows]
-        pd.set_option('display.max_rows', rows)
-        display(x)
+    def update(_):
+        x, r, p = data.value, rows.value, pages.value
+        n = x.shape[0]
 
-    def update_pages(x, rows):
-        if x.shape[0]==0:
+        label.value = f'{n} rows.'   
+        if n==0:
             pages.min = 0
             pages.max = 0
         else:
-            pages.max = np.ceil(x.shape[0]/rows)
-            pages.min = 1            
+            pages.max = np.ceil(n/r)
+            pages.min = 1         
 
-    data.observe(lambda x: update_pages(x.new, rows.value), 'value')
-    rows.observe(lambda x: update_pages(data.value, x.new), 'value')    
+        x = x.iloc[(p-1)*r:p*r]
+        pd.set_option('display.max_rows', r)
+        with out:
+            clear_output(wait=True)
+            display(x)
 
-    page = widgets.interactive(
-        _pager_update,
-        x = data,
-        rows = rows,
-        page = pages
-    )
-
-    return page
+    for x in [data, rows, pages]:
+        x.observe(update, 'value')
+    
+    return widgets.VBox([
+        rows,
+        pages,
+        label,
+        out
+    ])
 
 # %%
 @property
@@ -519,5 +520,12 @@ def _analysis_clust3_enrichment_clust1_expr_for_clust(self):
         out
     ])
 _analysis._clust3._enrichment._clust1.expr_for_clust = _analysis_clust3_enrichment_clust1_expr_for_clust
+
+# %%
+if __name__ == '__main__':
+    self = analysis.clust3(20).enrich.clust1(30)
+
+    # %%
+    self.sigs_for_clust
 
 # %%
