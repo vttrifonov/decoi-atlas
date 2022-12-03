@@ -186,9 +186,6 @@ px.scatter(
 # Explore the gene sets represented by each signature cluster
 
 # %%
-self = analysis.clust3(20).enrich.clust1(30)
-
-# %%
 analysis.clust3(20).enrich.clust1(30).sigs_for_clust
 
 # %% [markdown]
@@ -196,5 +193,4 @@ analysis.clust3(20).enrich.clust1(30).sigs_for_clust
 
 # %%
 analysis.clust3(20).enrich.clust1(30).expr_for_clust
-
 

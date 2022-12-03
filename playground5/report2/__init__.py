@@ -298,21 +298,21 @@ def _analysis_clust3_enrichment_clust1_data1(self):
 _analysis._clust3._enrichment._clust1.data1 = _analysis_clust3_enrichment_clust1_data1
 
 # %%
-def _pager_update(
-    x = None,
-    rows=20, page=1            
-):
-    print(f'{x.shape[0]} rows.')
-    x = x.iloc[(page-1)*rows:page*rows]
-    pd.set_option('display.max_rows', rows)
-    return x
-
 def pager(
     data,
     min=20, max=100, step=20
 ):
     rows = widgets.IntSlider(min=min, max=max, step=step)
     pages = widgets.IntSlider(min=1, max=1)
+
+    def _pager_update(
+        x = None,
+        rows=20, page=1            
+    ):
+        display(widgets.Label(f'{x.shape[0]} rows.'))
+        x = x.iloc[(page-1)*rows:page*rows]
+        pd.set_option('display.max_rows', rows)
+        display(x)
 
     def update_pages(x, rows):
         if x.shape[0]==0:
@@ -329,8 +329,7 @@ def pager(
         _pager_update,
         x = data,
         rows = rows,
-        page = pages,
-        auto_display = True
+        page = pages
     )
 
     return page
