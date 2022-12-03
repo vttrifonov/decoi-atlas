@@ -347,45 +347,38 @@ def _analysis_clust3_enrichment_clust1_sigs_for_clust(self):
     x4 = x4.to_dataframe().reset_index()
     x4['sig'] = x4.sig.str.replace('^[^_]*_', '', regex=True)
 
-    class _sigs_for_clust(widgets.ValueWidget):
-        description = ''
+    sigs_for_clust = widgets.ValueWidget(description='')
 
-        def update(
-            self,
-            sig_prefix='', 
-            sig_clust='', 
-            sig='',
-            sig_size=[10, 500],
-            sig_proba=0.9
-        ):
-            x5 = x4
-            x5 = x5[x5.sig_size>=sig_size[0]]
-            x5 = x5[x5.sig_size<=sig_size[1]]
-            x5 = x5[x5.sig_proba>=sig_proba]
-            if sig_prefix!='':
-                x5 = x5[x5.sig_prefix==sig_prefix]
-            if sig_clust!='':
-                x5 = x5[x5.sig_clust==int(sig_clust)]
-            if sig!='':
-                x5 = x5[x5.sig.str.contains(sig, regex=True)]
+    def update(
+        sig_prefix='', 
+        sig_clust='', 
+        sig='',
+        sig_size=[10, 500],
+        sig_proba=0.9
+    ):
+        x5 = x4
+        x5 = x5[x5.sig_size>=sig_size[0]]
+        x5 = x5[x5.sig_size<=sig_size[1]]
+        x5 = x5[x5.sig_proba>=sig_proba]
+        if sig_prefix!='':
+            x5 = x5[x5.sig_prefix==sig_prefix]
+        if sig_clust!='':
+            x5 = x5[x5.sig_clust==int(sig_clust)]
+        if sig!='':
+            x5 = x5[x5.sig.str.contains(sig, regex=True)]
 
-            x5 = x5.sort_values('sig_proba', ascending=False)
-            self.value = x5
-
-        def __init__(self):
-            self.widget = widgets.interactive(
-                self.update,
-                sig_prefix = [''] + list(x4.sig_prefix.drop_duplicates()),
-                sig_clust = [''] + list(x4.sig_clust.drop_duplicates().astype(str)),    
-                sig = '',
-                sig_size = widgets.IntRangeSlider(value=[10, 500], min=1, max=x4.sig_size.max()),
-                sig_proba = (0, 1, 0.1)
-            )
-
-    sigs_for_clust = _sigs_for_clust()
+        x5 = x5.sort_values('sig_proba', ascending=False)
+        sigs_for_clust.value = x5
 
     return widgets.VBox([
-        sigs_for_clust.widget,
+        widgets.interactive(
+            update,
+            sig_prefix = [''] + list(x4.sig_prefix.drop_duplicates()),
+            sig_clust = [''] + list(x4.sig_clust.drop_duplicates().astype(str)),    
+            sig = '',
+            sig_size = widgets.IntRangeSlider(value=[10, 500], min=1, max=x4.sig_size.max()),
+            sig_proba = (0, 1, 0.1)
+        ),
         pager(sigs_for_clust)
     ])
 
