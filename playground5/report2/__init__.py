@@ -385,39 +385,6 @@ def _analysis_clust3_enrichment_clust1_sigs_for_clust(self):
         pager(sigs_for_clust)
     ])
 
-def _():
-    @widgets.interact(
-        sig_prefix=[''] + list(x4.sig_prefix.drop_duplicates()),
-        sig_clust=[''] + list(x4.sig_clust.drop_duplicates().astype(str)),    
-        sig='',
-        sig_size = widgets.IntRangeSlider(value=[10, 500], min=1, max=x4.sig_size.max()),
-        sig_proba = (0, 1, 0.1),
-        rows=(0, 100, 20)
-    )
-    def sigs_for_clust(
-        sig_prefix='', 
-        sig_clust='', 
-        sig='',
-        sig_size=[10, 500],
-        sig_proba=0.9,
-        rows=20
-    ):
-        x5 = x4
-        x5 = x5[x5.sig_size>=sig_size[0]]
-        x5 = x5[x5.sig_size<=sig_size[1]]
-        x5 = x5[x5.sig_proba>=sig_proba]
-        if sig_prefix!='':
-            x5 = x5[x5.sig_prefix==sig_prefix]
-        if sig_clust!='':
-            x5 = x5[x5.sig_clust==int(sig_clust)]
-        if sig!='':
-            x5 = x5[x5.sig.str.contains(sig, regex=True)]
-        print(f'{x5.shape[0]} gene sets.')
-        pd.set_option('display.max_rows', rows)
-        return x5.sort_values('sig_proba', ascending=False).head(rows)
-
-    return sigs_for_clust
-
 _analysis._clust3._enrichment._clust1.sigs_for_clust = _analysis_clust3_enrichment_clust1_sigs_for_clust
 
 # %%
