@@ -349,6 +349,7 @@ def _analysis_clust3_enrichment_clust1_sigs_for_clust(self):
 
     class _sigs_for_clust(widgets.ValueWidget):
         description = ''
+
         def update(
             self,
             sig_prefix='', 
@@ -371,17 +372,20 @@ def _analysis_clust3_enrichment_clust1_sigs_for_clust(self):
             x5 = x5.sort_values('sig_proba', ascending=False)
             self.value = x5
 
+        def __init__(self):
+            self.widget = widgets.interactive(
+                self.update,
+                sig_prefix = [''] + list(x4.sig_prefix.drop_duplicates()),
+                sig_clust = [''] + list(x4.sig_clust.drop_duplicates().astype(str)),    
+                sig = '',
+                sig_size = widgets.IntRangeSlider(value=[10, 500], min=1, max=x4.sig_size.max()),
+                sig_proba = (0, 1, 0.1)
+            )
+
     sigs_for_clust = _sigs_for_clust()
 
     return widgets.VBox([
-        widgets.interactive(
-            sigs_for_clust.update,
-            sig_prefix = [''] + list(x4.sig_prefix.drop_duplicates()),
-            sig_clust = [''] + list(x4.sig_clust.drop_duplicates().astype(str)),    
-            sig = '',
-            sig_size = widgets.IntRangeSlider(value=[10, 500], min=1, max=x4.sig_size.max()),
-            sig_proba = (0, 1, 0.1)
-        ),
+        sigs_for_clust.widget,
         pager(sigs_for_clust)
     ])
 
