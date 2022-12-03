@@ -1,5 +1,6 @@
 # %%
 if __name__ == '__main__':
+    import os
     __file__ = os.path.expanduser('~/projects/empty.py')
     __package__ = 'decoi_atlas.playground5.report2'
 
@@ -9,7 +10,7 @@ import numpy as np
 import pandas as pd
 import xarray as xa
 import ipywidgets as widgets
-from IPython.display import display
+from IPython.display import display, clear_output
 import statsmodels.api as sm
 from plotnine import *
 import matplotlib.pyplot as plt
@@ -299,6 +300,8 @@ _analysis._clust3._enrichment._clust1.data1 = _analysis_clust3_enrichment_clust1
 # %%
 @property
 def _analysis_clust3_enrichment_clust1_sigs_for_clust(self):
+    # %%
+    self = analysis.clust3(20).enrich.clust1(30)
     x3 = self.data1
     x4 = xa.merge([
         x3.sig_prefix,
@@ -308,6 +311,78 @@ def _analysis_clust3_enrichment_clust1_sigs_for_clust(self):
     x4 = x4.to_dataframe().reset_index()
     x4['sig'] = x4.sig.str.replace('^[^_]*_', '', regex=True)
 
+    # %%
+    class _filter:
+        data = None
+        def filter(
+            self,
+            sig_prefix='', 
+            sig_clust='', 
+            sig='',
+            sig_size=[10, 500],
+            sig_proba=0.9
+        ):
+            x5 = x4
+            x5 = x5[x5.sig_size>=sig_size[0]]
+            x5 = x5[x5.sig_size<=sig_size[1]]
+            x5 = x5[x5.sig_proba>=sig_proba]
+            if sig_prefix!='':
+                x5 = x5[x5.sig_prefix==sig_prefix]
+            if sig_clust!='':
+                x5 = x5[x5.sig_clust==int(sig_clust)]
+            if sig!='':
+                x5 = x5[x5.sig.str.contains(sig, regex=True)]
+
+            x5 = x5.sort_values('sig_proba', ascending=False)
+            self.data = x5
+            x5
+
+        @compose(property, lazy)
+        def widget(self):
+            w = widgets.interactive(
+                self.filter,
+                sig_prefix = [''] + list(x4.sig_prefix.drop_duplicates()),
+                sig_clust = [''] + list(x4.sig_clust.drop_duplicates().astype(str)),    
+                sig = '',
+                sig_size = widgets.IntRangeSlider(value=[10, 500], min=1, max=x4.sig_size.max()),
+                sig_proba = (0, 1, 0.1)
+            )
+            out = w.children[5]
+
+            def update(
+                rows=20, page=1            
+            ):
+                x = self.data            
+                print(f'{x.shape[0]} rows.')
+                x = x.iloc[page*rows:(page+1)*rows]
+                pd.set_option('display.max_rows', rows)
+                display(x)
+
+            page = widgets.interactive(
+                update,
+                rows = (20,100,20),
+                page = (1,1,1),
+                updated = False
+            )
+            rows = page.children[0]
+            pages = page.children[1]
+
+            def update_page():
+                if self.data is None:
+                    return
+
+                pages.max = np.ceil(self.data.shape[0]//rows.value)
+                with out:
+                    display(page)
+
+            out.on_displayed(lambda _: update_page())
+
+            return w
+
+    filter = _filter()
+    self = filter
+
+    # %%
     @widgets.interact(
         sig_prefix=[''] + list(x4.sig_prefix.drop_duplicates()),
         sig_clust=[''] + list(x4.sig_clust.drop_duplicates().astype(str)),    

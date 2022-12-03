@@ -1,5 +1,6 @@
 # %%
 if __name__ == '__main__':
+    import os
     __file__ = os.path.expanduser('~/projects/empty.py')
     __package__ = 'decoi_atlas.playground5.report2'
 
@@ -183,6 +184,9 @@ px.scatter(
 
 # %% [markdown]
 # Explore the gene sets represented by each signature cluster
+
+# %%
+self = analysis.clust3(20).enrich.clust1(30)
 
 # %%
 analysis.clust3(20).enrich.clust1(30).sigs_for_clust
