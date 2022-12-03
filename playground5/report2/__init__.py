@@ -337,7 +337,6 @@ def pager(
 # %%
 @property
 def _analysis_clust3_enrichment_clust1_sigs_for_clust(self):
-    #self = analysis.clust3(20).enrich.clust1(30)
     x3 = self.data1
     x4 = xa.merge([
         x3.sig_prefix,
