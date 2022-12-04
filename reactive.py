@@ -2,6 +2,7 @@
 import ipywidgets as w
 import traitlets as t
 import IPython.display as ipd
+from types import SimpleNamespace as namespace
 
 # %%
 class Value(t.HasTraits):
@@ -28,8 +29,9 @@ def observer(*args):
 def reactive(*args):
     def wrap(f, v = None):
         if v is None:
-            v = Value()
+            v = Value()        
         observe(*args)(lambda *a: v.update(f(*a)))
+        v.update(f(*[a.value for a in args]))
         return v
     return wrap
 
@@ -45,11 +47,11 @@ class Output(w.Output):
 
     def react(self, x, clear_output=True, wait=True):
         observe(x)(lambda x: self.display(x, clear_output, wait))
+        self.on_displayed(lambda *_: self.display(x.value, clear_output, wait))
 
 class NamedChildren:
     def __init__(self, children):
-        for k, v in children.items():
-            self.__dict__[k] = v
+        self.c = namespace(**children)
 
 class VBox(NamedChildren, w.VBox):
     def __init__(self, children, **kwargs):
@@ -61,3 +63,4 @@ class HBox(NamedChildren, w.HBox):
         super().__init__(children)
         super(NamedChildren, self).__init__(tuple(children.values()), **kwargs)
 
+# %%

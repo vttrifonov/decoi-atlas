@@ -12,9 +12,9 @@ import statsmodels.api as sm
 from plotnine import *
 import matplotlib.pyplot as plt
 from scipy.cluster.hierarchy import dendrogram, linkage
-
 from .. import _analysis, analysis
 from ...common.caching import compose, lazy
+from ...reactive import Output, VBox, react
 
 # %%
 def plot_table1(x1):
@@ -295,55 +295,6 @@ def _analysis_clust3_enrichment_clust1_data1(self):
 _analysis._clust3._enrichment._clust1.data1 = _analysis_clust3_enrichment_clust1_data1
 
 # %%
-def pager(
-    data,
-    min=20, max=100, step=20
-):
-    rows = widgets.IntSlider(min=min, max=max, step=step)
-    pages = widgets.IntSlider(min=1, max=1)
-    label = widgets.Label()
-
-    class _pager(widgets.ValueWidget):
-        widget = None
-    pager = _pager()
-
-    def update(_):
-        x, r, p = data.value, rows.value, pages.value
-        n = x.shape[0]
-
-        label.value = f'{n} rows.'   
-        if n==0:
-            pages.min = 0
-            pages.max = 0
-        else:
-            pages.max = np.ceil(n/r)
-            pages.min = 1         
-
-        x = x.iloc[(p-1)*r:p*r]
-        pd.set_option('display.max_rows', r)
-        pager.value = x
-
-    for x in [data, rows, pages]:
-        x.observe(update, 'value')
-    
-    pager.widget = widgets.VBox([
-        rows,
-        pages,
-        label
-    ])
-
-    return pager
-
-def output(x):
-    out = widgets.Output()
-    def update(_):
-        with out:
-            clear_output(wait=True)
-            display(x.value)
-    x.observe(update, 'value')
-    return out 
-
-# %%
 @property
 def _analysis_clust3_enrichment_clust1_sigs_for_clust(self):
     x3 = self.data1
@@ -355,15 +306,24 @@ def _analysis_clust3_enrichment_clust1_sigs_for_clust(self):
     x4 = x4.to_dataframe().reset_index()
     x4['sig'] = x4.sig.str.replace('^[^_]*_', '', regex=True)
 
-    sigs_for_clust = widgets.ValueWidget(description='')    
+    ctrls = VBox(dict(
+        filter=VBox(dict(
+            sig_prefix = widgets.Dropdown(value='', description='sig_prefix', options=[''] + list(x4.sig_prefix.drop_duplicates())),
+            sig_clust = widgets.Dropdown(value='', description='sig_clust', options=[''] + list(x4.sig_clust.drop_duplicates().astype(str))),
+            sig = widgets.Text(value='', description='sig'),
+            sig_size = widgets.IntRangeSlider(value=[10, 500], description='sig_size', min=1, max=x4.sig_size.max()),
+            sig_proba = widgets.FloatSlider(value=0.9, description='sig_proba', min=0, max=1, step=0.1)
+        )),
+        pager=VBox(dict(
+            rows = widgets.IntSlider(value=20, description='rows', min=20, max=100, step=20),
+            page = widgets.IntSlider(value=1, description='page', min=1, max=1, step=1)            
+        )),
+        label = widgets.Label(),
+        out = Output()
+    ))
 
-    def filter(
-        sig_prefix='', 
-        sig_clust='', 
-        sig='',
-        sig_size=[10, 500],
-        sig_proba=0.9
-    ):
+    @react(*ctrls.c.filter.children)
+    def x5(sig_prefix, sig_clust, sig, sig_size, sig_proba):
         x5 = x4
         x5 = x5[x5.sig_size>=sig_size[0]]
         x5 = x5[x5.sig_size<=sig_size[1]]
@@ -376,26 +336,29 @@ def _analysis_clust3_enrichment_clust1_sigs_for_clust(self):
             x5 = x5[x5.sig.str.contains(sig, regex=True)]
 
         x5 = x5.sort_values('sig_proba', ascending=False)
-        sigs_for_clust.value = x5
+        return x5
 
-    filter = widgets.interactive(
-        filter,
-        sig_prefix = [''] + list(x4.sig_prefix.drop_duplicates()),
-        sig_clust = [''] + list(x4.sig_clust.drop_duplicates().astype(str)),    
-        sig = '',
-        sig_size = widgets.IntRangeSlider(value=[10, 500], min=1, max=x4.sig_size.max()),
-        sig_proba = (0, 1, 0.1)
-    )
+    @react(x5, *ctrls.c.pager.children)
+    def x6(x, r, p):
+        n = x.shape[0]
 
-    filter_pager = pager(sigs_for_clust)
+        ctrls.c.label.value = f'{n} rows.'  
+        page = ctrls.c.pager.c.page 
+        if n==0:
+            page.min = 0
+            page.max = 0
+        else:
+            page.max = np.ceil(n/r)
+            page.min = 1         
 
-    out = output(filter_pager)
+        p = min(page.max, p)
+        x = x.iloc[(p-1)*r:p*r]
+        pd.set_option('display.max_rows', r)
+        return x
 
-    return widgets.VBox([
-        filter,
-        filter_pager.widget,
-        out
-    ])
+    ctrls.c.out.react(x6)
+
+    return ctrls
 
 _analysis._clust3._enrichment._clust1.sigs_for_clust = _analysis_clust3_enrichment_clust1_sigs_for_clust
 
