@@ -7,3 +7,4 @@ decoi_atlas
 .vscode
 *.ipynb
 jupyter.log
+.nfs*
