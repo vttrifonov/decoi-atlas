@@ -1,11 +1,8 @@
 # %%
 if __name__ == '__main__':
-    import os
-    __file__ = os.path.expanduser('~/projects/empty.py')
     __package__ = 'decoi_atlas.playground5.report2'
 
 # %%
-
 import numpy as np
 import pandas as pd
 import xarray as xa
@@ -305,7 +302,10 @@ def pager(
     rows = widgets.IntSlider(min=min, max=max, step=step)
     pages = widgets.IntSlider(min=1, max=1)
     label = widgets.Label()
-    out = widgets.Output()
+
+    class _pager(widgets.ValueWidget):
+        widget = None
+    pager = _pager()
 
     def update(_):
         x, r, p = data.value, rows.value, pages.value
@@ -321,19 +321,27 @@ def pager(
 
         x = x.iloc[(p-1)*r:p*r]
         pd.set_option('display.max_rows', r)
-        with out:
-            clear_output(wait=True)
-            display(x)
+        pager.value = x
 
     for x in [data, rows, pages]:
         x.observe(update, 'value')
     
-    return widgets.VBox([
+    pager.widget = widgets.VBox([
         rows,
         pages,
-        label,
-        out
+        label
     ])
+
+    return pager
+
+def output(x):
+    out = widgets.Output()
+    def update(_):
+        with out:
+            clear_output(wait=True)
+            display(x.value)
+    x.observe(update, 'value')
+    return out 
 
 # %%
 @property
@@ -347,9 +355,9 @@ def _analysis_clust3_enrichment_clust1_sigs_for_clust(self):
     x4 = x4.to_dataframe().reset_index()
     x4['sig'] = x4.sig.str.replace('^[^_]*_', '', regex=True)
 
-    sigs_for_clust = widgets.ValueWidget(description='')
+    sigs_for_clust = widgets.ValueWidget(description='')    
 
-    def update(
+    def filter(
         sig_prefix='', 
         sig_clust='', 
         sig='',
@@ -370,16 +378,23 @@ def _analysis_clust3_enrichment_clust1_sigs_for_clust(self):
         x5 = x5.sort_values('sig_proba', ascending=False)
         sigs_for_clust.value = x5
 
+    filter = widgets.interactive(
+        filter,
+        sig_prefix = [''] + list(x4.sig_prefix.drop_duplicates()),
+        sig_clust = [''] + list(x4.sig_clust.drop_duplicates().astype(str)),    
+        sig = '',
+        sig_size = widgets.IntRangeSlider(value=[10, 500], min=1, max=x4.sig_size.max()),
+        sig_proba = (0, 1, 0.1)
+    )
+
+    filter_pager = pager(sigs_for_clust)
+
+    out = output(filter_pager)
+
     return widgets.VBox([
-        widgets.interactive(
-            update,
-            sig_prefix = [''] + list(x4.sig_prefix.drop_duplicates()),
-            sig_clust = [''] + list(x4.sig_clust.drop_duplicates().astype(str)),    
-            sig = '',
-            sig_size = widgets.IntRangeSlider(value=[10, 500], min=1, max=x4.sig_size.max()),
-            sig_proba = (0, 1, 0.1)
-        ),
-        pager(sigs_for_clust)
+        filter,
+        filter_pager.widget,
+        out
     ])
 
 _analysis._clust3._enrichment._clust1.sigs_for_clust = _analysis_clust3_enrichment_clust1_sigs_for_clust
