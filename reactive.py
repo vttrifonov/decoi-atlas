@@ -49,18 +49,16 @@ class Output(w.Output):
         observe(x)(lambda x: self.display(x, clear_output, wait))
         self.on_displayed(lambda *_: self.display(x.value, clear_output, wait))
 
-class NamedChildren:
-    def __init__(self, children):
+
+class VBox(w.VBox):
+    def __init__(self, children, **kwargs):
+        w.VBox.__init__(self, list(children.values()), **kwargs)
         self.c = namespace(**children)
 
-class VBox(NamedChildren, w.VBox):
-    def __init__(self, children, **kwargs):
-        super().__init__(children)
-        super(NamedChildren, self).__init__(tuple(children.values()), **kwargs)
 
-class HBox(NamedChildren, w.HBox):
+class HBox(w.HBox):
     def __init__(self, children, **kwargs):
-        super().__init__(children)
-        super(NamedChildren, self).__init__(tuple(children.values()), **kwargs)
+        w.HBox.__init__(self, list(children.values()), **kwargs)
+        self.c = namespace(**children)
 
 # %%

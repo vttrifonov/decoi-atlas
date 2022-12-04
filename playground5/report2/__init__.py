@@ -347,11 +347,12 @@ def _analysis_clust3_enrichment_clust1_sigs_for_clust(self):
         if n==0:
             page.min = 0
             page.max = 0
+            p = 0
         else:
             page.max = np.ceil(n/r)
-            page.min = 1         
-
-        p = min(page.max, p)
+            page.min = 1             
+            p = min(page.max, p)
+            p = max(page.min, p)
         x = x.iloc[(p-1)*r:p*r]
         pd.set_option('display.max_rows', r)
         return x
