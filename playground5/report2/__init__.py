@@ -7,14 +7,14 @@ import numpy as np
 import pandas as pd
 import xarray as xa
 import ipywidgets as widgets
-from IPython.display import display, clear_output
+import IPython.display as ipd
 import statsmodels.api as sm
 from plotnine import *
 import matplotlib.pyplot as plt
 from scipy.cluster.hierarchy import dendrogram, linkage
 from .. import _analysis, analysis
 from ...common.caching import compose, lazy
-from ...reactive import Output, VBox, react
+from ...reactive import VBox, HBox, reactive, observe, display
 
 # %%
 def plot_table1(x1):
@@ -86,7 +86,7 @@ def _analysis_cluster_to_cell_overlap(self):
         ], join='inner')
         x1['cell_integrated_snn_res.0.3'] = x1['cell_integrated_snn_res.0.3'].astype(str)
         x1['clust'] = x1['clust'].astype(str)
-        display(
+        ipd.display(
             plot_table1(
                 x1[['cell_integrated_snn_res.0.3', 'clust']].to_dataframe()
             )
@@ -319,10 +319,10 @@ def _analysis_clust3_enrichment_clust1_sigs_for_clust(self):
             page = widgets.IntSlider(value=1, description='page', min=1, max=1, step=1)            
         )),
         label = widgets.Label(),
-        out = Output()
+        out = widgets.Output()
     ))
 
-    @react(*ctrls.c.filter.children)
+    @reactive(*ctrls.filter.children)
     def x5(sig_prefix, sig_clust, sig, sig_size, sig_proba):
         x5 = x4
         x5 = x5[x5.sig_size>=sig_size[0]]
@@ -338,12 +338,12 @@ def _analysis_clust3_enrichment_clust1_sigs_for_clust(self):
         x5 = x5.sort_values('sig_proba', ascending=False)
         return x5
 
-    @react(x5, *ctrls.c.pager.children)
+    @reactive(x5, *ctrls.pager.children)
     def x6(x, r, p):
         n = x.shape[0]
 
-        ctrls.c.label.value = f'{n} rows.'  
-        page = ctrls.c.pager.c.page 
+        ctrls.label.value = f'{n} rows.'  
+        page = ctrls.pager.page 
         if n==0:
             page.min = 0
             page.max = 0
@@ -357,7 +357,8 @@ def _analysis_clust3_enrichment_clust1_sigs_for_clust(self):
         pd.set_option('display.max_rows', r)
         return x
 
-    ctrls.c.out.react(x6)
+    with ctrls.out:
+        display(ctrls.out, x6)
 
     return ctrls
 
@@ -450,7 +451,7 @@ def _analysis_clust3_enrichment_clust1_expr_for_clust(self):
             )
             if len(genes)>0:
                 p = p + geom_point(data=x4[x4.feature_id.isin(genes)], color='black')
-            display(p)
+            ipd.display(p)
 
             x9 = x4[x4.set==True].copy()
             x9 = x9[x9.feature_id.isin(genes)]
@@ -469,9 +470,9 @@ def _analysis_clust3_enrichment_clust1_expr_for_clust(self):
             x8 = x10.index.to_numpy()[x8]    
             x9['feature_id'] = x9.feature_id.astype(pd.CategoricalDtype(x8))
 
-        display(widgets.Label(f'{x5} selected gene.'))
+        ipd.display(widgets.Label(f'{x5} selected gene.'))
         if x5>0 and x5<500:
-            display(
+            ipd.display(
                 ggplot(x9)+aes('cell_clust', 'feature_id', fill='clust_means')+
                     geom_tile()+
                     scale_fill_gradient2(

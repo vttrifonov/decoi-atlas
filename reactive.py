@@ -87,13 +87,21 @@ def reactive(*args):
 import ipywidgets as w
 import IPython.display as ipd
 
-def _display(out, x, clear_output=True, wait=True):
-    with out:
+def _display(out, x, clear_output, wait):
+    def _display():
         if clear_output:
             ipd.clear_output(wait=wait)
         ipd.display(x)
+    if out is None:
+        _display()
+        return
+    with out:
+        _display()
 
 def display(out, x, clear_output=True, wait=True):
+    if not isinstance(x, ValueProvider):
+        _display(out, x, clear_output, wait)
+        return
     observe(x)(lambda x: _display(out, x, clear_output, wait))
     out.on_displayed(lambda *_: _display(out, x(), clear_output, wait))
 
