@@ -357,8 +357,7 @@ def _analysis_clust3_enrichment_clust1_sigs_for_clust(self):
         pd.set_option('display.max_rows', r)
         return x
 
-    with ctrls.out:
-        display(ctrls.out, x6)
+    display(ctrls.out, x6)
 
     return ctrls
 
