@@ -6,7 +6,7 @@ if __name__ == '__main__':
 import numpy as np
 import pandas as pd
 import xarray as xa
-import ipywidgets as widgets
+import ipywidgets as ipw
 import IPython.display as ipd
 import statsmodels.api as sm
 from plotnine import *
@@ -91,7 +91,7 @@ def _analysis_cluster_to_cell_overlap(self):
                 x1[['cell_integrated_snn_res.0.3', 'clust']].to_dataframe()
             )
         )
-    cluster_to_cell_overlap = widgets.interact(
+    cluster_to_cell_overlap = ipw.interact(
         cluster_to_cell_overlap,
         num_clusters=[10, 20, 30, 40]    
     )
@@ -108,11 +108,11 @@ def _analysis_clust3_enrichment_clust1_cell_cluster_sigs(self):
     x1 = x1.to_dataframe().reset_index()
     x1['sig'] = x1.sig.str.replace('^[^_]*_', '', regex=True)
 
-    @widgets.interact(
+    @ipw.interact(
         sig_prefix=[''] + list(x1.sig_prefix.drop_duplicates()), 
         cell_clust=[''] + list(np.sort(x1.cell_clust.drop_duplicates()).astype(str)),
         sig='',
-        sig_size = widgets.IntRangeSlider(value=[10, 500], min=1, max=x1.sig_size.max()),
+        sig_size = ipw.IntRangeSlider(value=[10, 500], min=1, max=x1.sig_size.max()),
         coef = ['ascending', 'descending'],
         rows=(0, 100, 20)
     )
@@ -308,18 +308,18 @@ def _analysis_clust3_enrichment_clust1_sigs_for_clust(self):
 
     ctrls = VBox(dict(
         filter=VBox(dict(
-            sig_prefix = widgets.Dropdown(value='', description='sig_prefix', options=[''] + list(x4.sig_prefix.drop_duplicates())),
-            sig_clust = widgets.Dropdown(value='', description='sig_clust', options=[''] + list(x4.sig_clust.drop_duplicates().astype(str))),
-            sig = widgets.Text(value='', description='sig'),
-            sig_size = widgets.IntRangeSlider(value=[10, 500], description='sig_size', min=1, max=x4.sig_size.max()),
-            sig_proba = widgets.FloatSlider(value=0.9, description='sig_proba', min=0, max=1, step=0.1)
+            sig_prefix = ipw.Dropdown(value='', description='sig_prefix', options=[''] + list(x4.sig_prefix.drop_duplicates())),
+            sig_clust = ipw.Dropdown(value='', description='sig_clust', options=[''] + list(x4.sig_clust.drop_duplicates().astype(str))),
+            sig = ipw.Text(value='', description='sig'),
+            sig_size = ipw.IntRangeSlider(value=[10, 500], description='sig_size', min=1, max=x4.sig_size.max()),
+            sig_proba = ipw.FloatSlider(value=0.9, description='sig_proba', min=0, max=1, step=0.1)
         )),
         pager=VBox(dict(
-            rows = widgets.IntSlider(value=20, description='rows', min=20, max=100, step=20),
-            page = widgets.IntSlider(value=1, description='page', min=1, max=1, step=1)            
+            rows = ipw.IntSlider(value=20, description='rows', min=20, max=100, step=20),
+            page = ipw.IntSlider(value=1, description='page', min=1, max=1, step=1)            
         )),
-        label = widgets.Label(),
-        out = widgets.Output()
+        label = ipw.Label(),
+        out = ipw.Output()
     ))
 
     @reactive(*ctrls.filter.children)
@@ -379,18 +379,18 @@ def _analysis_clust3_enrichment_clust1_expr_for_clust(self):
         drop_duplicates(x7.columns[1]).\
         sort_values([x7.columns[0], 'value']).cell_clust
 
-    sig_prefix = widgets.Dropdown(description='sig_prefix', options=['']+list(np.unique(x3.sig_prefix.data)))
-    sig_regex = widgets.Text(description='sig_regex')
-    sig = widgets.Dropdown(description='sig', options=['']+list(np.unique(x3.sig.data)))
-    gene_regex = widgets.Text(description='gene_regex')
-    genes = widgets.SelectMultiple(
+    sig_prefix = ipw.Dropdown(description='sig_prefix', options=['']+list(np.unique(x3.sig_prefix.data)))
+    sig_regex = ipw.Text(description='sig_regex')
+    sig = ipw.Dropdown(description='sig', options=['']+list(np.unique(x3.sig.data)))
+    gene_regex = ipw.Text(description='gene_regex')
+    genes = ipw.SelectMultiple(
         description='genes',
         options=np.sort(x3.feature_id.data)
     )
-    sig_button = widgets.Button(description='update sigs')
-    genes_button = widgets.Button(description='update genes')
-    plot_button = widgets.Button(description='update plot')
-    out = widgets.Output()
+    sig_button = ipw.Button(description='update sigs')
+    genes_button = ipw.Button(description='update genes')
+    plot_button = ipw.Button(description='update plot')
+    out = ipw.Output()
 
     def sig_update(sig_prefix, sig_regex, genes):    
         x4 = x3[['sig_prefix', 'sig']].to_dataframe().reset_index()
@@ -469,7 +469,7 @@ def _analysis_clust3_enrichment_clust1_expr_for_clust(self):
             x8 = x10.index.to_numpy()[x8]    
             x9['feature_id'] = x9.feature_id.astype(pd.CategoricalDtype(x8))
 
-        ipd.display(widgets.Label(f'{x5} selected gene.'))
+        ipd.display(ipw.Label(f'{x5} selected gene.'))
         if x5>0 and x5<500:
             ipd.display(
                 ggplot(x9)+aes('cell_clust', 'feature_id', fill='clust_means')+
@@ -486,11 +486,11 @@ def _analysis_clust3_enrichment_clust1_expr_for_clust(self):
 
     plot_button.on_click(out.capture(clear_output=True)(lambda b: plot(sig.value, list(genes.value))))
 
-    return widgets.VBox([
-        widgets.VBox([
+    return ipw.VBox([
+        ipw.VBox([
             sig_prefix,
-            widgets.HBox([sig_regex, sig, sig_button]),
-            widgets.HBox([gene_regex, genes, genes_button]),
+            ipw.HBox([sig_regex, sig, sig_button]),
+            ipw.HBox([gene_regex, genes, genes_button]),
             plot_button
         ]),  
         out
