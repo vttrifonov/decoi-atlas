@@ -14,7 +14,7 @@ import matplotlib.pyplot as plt
 from scipy.cluster.hierarchy import dendrogram, linkage
 from .. import _analysis, analysis
 from ...common.caching import compose, lazy
-from ...reactive import VBox, HBox, reactive, observe, display, Value
+from ...reactive import VBox, HBox, reactive, observe, display, Value, Output
 
 # %%
 def plot_table1(x1):
@@ -297,6 +297,7 @@ _analysis._clust3._enrichment._clust1.data1 = _analysis_clust3_enrichment_clust1
 # %%
 @property
 def _analysis_clust3_enrichment_clust1_sigs_for_clust(self):
+    # %
     x3 = self.data1
     x4 = xa.merge([
         x3.sig_prefix,
@@ -306,6 +307,7 @@ def _analysis_clust3_enrichment_clust1_sigs_for_clust(self):
     x4 = x4.to_dataframe().reset_index()
     x4['sig'] = x4.sig.str.replace('^[^_]*_', '', regex=True)
 
+    # %
     ctrls = VBox(dict(
         filter=VBox(dict(
             sig_prefix = ipw.Dropdown(value='', description='sig_prefix', options=[''] + list(x4.sig_prefix.drop_duplicates())),
@@ -319,7 +321,7 @@ def _analysis_clust3_enrichment_clust1_sigs_for_clust(self):
             page = ipw.IntSlider(value=1, description='page', min=1, max=1, step=1)            
         )),
         label = ipw.Label(),
-        out = ipw.Output()
+        out = Output()
     ))
 
     @reactive(*ctrls.filter.children)
@@ -338,6 +340,7 @@ def _analysis_clust3_enrichment_clust1_sigs_for_clust(self):
         x5 = x5.sort_values('sig_proba', ascending=False)
         return x5
 
+    @ctrls.out.display()
     @reactive(x5, *ctrls.pager.children)
     def x6(x, r, p):
         n = x.shape[0]
@@ -357,7 +360,7 @@ def _analysis_clust3_enrichment_clust1_sigs_for_clust(self):
         pd.set_option('display.max_rows', r)
         return x
 
-    display(ctrls.out, x6)
+    # %
 
     return ctrls
 
@@ -555,5 +558,6 @@ if __name__ == '__main__':
 
     # %%
     self.expr_for_clust
+
 
 # %%
