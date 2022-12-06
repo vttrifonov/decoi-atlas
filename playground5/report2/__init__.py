@@ -14,7 +14,7 @@ import matplotlib.pyplot as plt
 from scipy.cluster.hierarchy import dendrogram, linkage
 from .. import _analysis, analysis
 from ...common.caching import compose, lazy
-from ...reactive import VBox, HBox, reactive, observe, display
+from ...reactive import VBox, HBox, reactive, observe, display, Value
 
 # %%
 def plot_table1(x1):
@@ -366,6 +366,7 @@ _analysis._clust3._enrichment._clust1.sigs_for_clust = _analysis_clust3_enrichme
 # %%
 @property
 def _analysis_clust3_enrichment_clust1_expr_for_clust(self):
+    # %%
     x1 = self.prev.prev
     x3 = self.data1
 
@@ -379,6 +380,7 @@ def _analysis_clust3_enrichment_clust1_expr_for_clust(self):
         drop_duplicates(x7.columns[1]).\
         sort_values([x7.columns[0], 'value']).cell_clust
 
+    # %%
     ui = VBox(dict(
         sig_prefix = ipw.Dropdown(description='sig_prefix', options=['']+list(np.unique(x3.sig_prefix.data))),
         sig = HBox(dict(
@@ -395,7 +397,9 @@ def _analysis_clust3_enrichment_clust1_expr_for_clust(self):
             update = ipw.Button(description='update genes')
         )),
         plot = ipw.Button(description='update plot'),
-        out = ipw.Output()
+        out1 = ipw.Output(),
+        label = ipw.Label(),
+        out2 = ipw.Output()
     ))
     
     @reactive(ui.sig_prefix, ui.sig.regex, ui.gene.genes)
@@ -444,6 +448,7 @@ def _analysis_clust3_enrichment_clust1_expr_for_clust(self):
 
     @reactive(ui.sig.sig, ui.gene.genes)
     def x4(sig, genes):
+        genes = list(genes)
         x4 = x3[['set', 'clust_means']]
         x4 = x4.rename(cell_clust_id='cell_clust')
 
@@ -464,6 +469,9 @@ def _analysis_clust3_enrichment_clust1_expr_for_clust(self):
 
     @reactive(ui.sig.sig, x4)
     def plot1(sig, x4):
+        if x4 is None:
+            return None
+
         if sig=='':
             return None
 
@@ -476,10 +484,15 @@ def _analysis_clust3_enrichment_clust1_expr_for_clust(self):
             p = p + geom_point(data=x4[x4.genes==True], color='black')
         return p
 
-    @reactive(x4, ui.gene.genes)
-    def x9(x4, genes):
-        x4 = x4[x4.set==True]
-        x4 = x4[x4.genes==True]
+    @reactive(x4, ui.sig.sig)
+    def x9(x4, sig):
+        if x4 is None:
+            return None
+
+        if sig != '':
+            x4 = x4[x4.set==True]
+            x4 = x4[x4.genes==True]
+            
         if x4.shape[0]==0:
             return None
 
@@ -490,16 +503,20 @@ def _analysis_clust3_enrichment_clust1_expr_for_clust(self):
             x8 = dendrogram(x8, no_plot=True)['leaves']
             x8 = x10.index.to_numpy()[x8]    
             x4['feature_id'] = x4.feature_id.astype(pd.CategoricalDtype(x8))
-        return x4
+        return (x5, x4)
 
     @reactive(x9)
     def update_label(x9):
-        x5 = x9.feature_id.drop_duplicates().shape[0]
-        ui.label = f'{x5} selected gene.'
+        if x9 is None:
+            return None
+        x5, _ = x9
+        ui.label.value = f'{x5} selected gene.'
 
     @reactive(x9)
     def plot2(x9):
-        x5 = x9.feature_id.drop_duplicates().shape[0]
+        if x9 is None:
+            return None
+        x5, x9 = x9
         if x5==0 or x5>=500:
             return None        
         return (
@@ -515,61 +532,21 @@ def _analysis_clust3_enrichment_clust1_expr_for_clust(self):
                 labs(y='')
         )
 
-    def plot(sig, genes):
-        x4 = x3[['set', 'clust_means']]
-        x4 = x4.rename(cell_clust_id='cell_clust')
+    plot_plot1 = Value(None)
+    plot_plot2 = Value(None)
 
-        if sig!='':
-            x4 = x4.sel(sig=sig)
-            x4['set'] = x4.set.todense()
-            x4 = x4.to_dataframe().reset_index()    
-            x4['cell_clust'] = x4.cell_clust.astype(pd.CategoricalDtype(x7))
+    def plot_click():
+        plot_plot1(plot1())
+        update_label()
+        plot_plot2(plot2())
 
-            p =  (
-                ggplot(x4)+aes('cell_clust', 'clust_means', color='set')+
-                    geom_boxplot()+
-                    labs(title=sig)
-            )
-            if len(genes)>0:
-                p = p + geom_point(data=x4[x4.feature_id.isin(genes)], color='black')
-            ipd.display(p)
+    ui.plot.on_click(lambda _: plot_click())
 
-            x9 = x4[x4.set==True].copy()
-            x9 = x9[x9.feature_id.isin(genes)]
-        else:
-            if len(genes)==0:
-                return
-            x9 = x4.clust_means.sel(feature_id=genes)
-            x9 = x9.to_dataframe().reset_index()    
-            x9['cell_clust'] = x9.cell_clust.astype(pd.CategoricalDtype(x7))
+    display(ui.out1, plot_plot1)
+    display(ui.out2, plot_plot2)
+    # %%
 
-        x5 = x9.feature_id.drop_duplicates().shape[0]
-        if x5>1:
-            x10 = x9.pivot_table(index='feature_id', columns='cell_clust', values='clust_means')
-            x8 = linkage(x10, method='average')
-            x8 = dendrogram(x8, no_plot=True)['leaves']
-            x8 = x10.index.to_numpy()[x8]    
-            x9['feature_id'] = x9.feature_id.astype(pd.CategoricalDtype(x8))
-
-        ipd.display(ipw.Label(f'{x5} selected gene.'))
-        if x5>0 and x5<500:
-            ipd.display(
-                ggplot(x9)+aes('cell_clust', 'feature_id', fill='clust_means')+
-                    geom_tile()+
-                    scale_fill_gradient2(
-                        low='blue', mid='white', high='red',
-                        midpoint=0
-                    )+
-                    theme(
-                        figure_size=(5, 0.2*x5),
-                    )+
-                    labs(y='')
-            )
-
-    ui.plot.on_click()
-    ui.plot.on_click(ui.out.capture(clear_output=True)(lambda b: plot(ui.sis.sig.value, list(ui.gene.genes.value))))
-
-    return 
+    return ui
 _analysis._clust3._enrichment._clust1.expr_for_clust = _analysis_clust3_enrichment_clust1_expr_for_clust
 
 # %%
