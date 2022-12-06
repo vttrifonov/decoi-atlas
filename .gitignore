@@ -8,3 +8,4 @@ decoi_atlas
 *.ipynb
 jupyter.log
 .nfs*
+.ipynb_checkpoints
