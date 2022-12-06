@@ -1,18 +1,71 @@
 # %%
 class Observable:
+    class Observer:
+        class Item:
+            def __init__(self, observable, observer):
+                self._observable = observable
+                self._observer = observer
+                self._paused = False
+
+            def stop(self):
+                if self._observer is None:
+                    return
+                self._observable._observers.remove(self)
+                self._observer = None
+                self._paused = False
+
+            def pause(self):
+                self._paused = True
+
+            def resume(self):
+                self._paused = False
+
+            @property
+            def paused(self):
+                return self._paused
+
+            def __call__(self, *args, **kwargs):
+                if self._paused:
+                    return
+                self._observer(*args, **kwargs)
+
+        class List:
+            def __init__(self, l):
+                self._l = l
+                self._paused = False
+
+            def stop(self):
+                for i in self._l:
+                    i.stop()
+                self._l = []
+                self._paused = False
+
+            def pause(self):
+                self._paused = True
+                for i in self._l:
+                    i.pause()
+
+            def resume(self):
+                self._paused = False
+                for i in self._l:
+                    i.resume()
+
+            @property
+            def paused(self):
+                return self._paused
+
     def __init__(self):
         self._observers = set()
 
-    def _notify(self):
+    def notify(self, *args, **kwargs):
         for o in self._observers:
-            o()
+            o(*args, **kwargs)
 
-    def observe(self, o):
-        self._observers.add(o)
-
-    def unobserve(self, o):
-        self._observers.remove(o)
-
+    def observe(self, observer):
+        observer = Observable.Observer.Item(self, observer)
+        self._observers.add(observer)
+        return observer
+        
 class ValueProvider:
     def __init__(self):
         self._dirty = Observable()
@@ -21,7 +74,7 @@ class _reactive_trait(ValueProvider):
     def __init__(self, trait):
         super().__init__()
         self._trait = trait
-        trait[0].observe(lambda _: self._dirty._notify(), trait[1])
+        trait[0].observe(lambda _: self._dirty.notify(), trait[1])
 
     def __call__(self):
         return getattr(*self._trait)
@@ -40,10 +93,9 @@ def observe(*args):
     args = _fix_args(args)
     def wrap(f):
         def observer():
-            f(*[a() for a in args])        
-        for a in args:
-            a._dirty.observe(observer)
-        return f
+            f(*[a() for a in args]) 
+        l = [a._dirty.observe(observer) for a in args]
+        return Observable.Observer.List(l)
     return wrap
 
 class _None:
@@ -62,7 +114,7 @@ class Value(ValueProvider):
                 raise(ValueError('value is not initialized'))
             return value
         self._value = value
-        self._dirty._notify()
+        self._dirty.notify()
 
 class Reactive(ValueProvider):
     def __init__(self, args, f):
@@ -76,7 +128,7 @@ class Reactive(ValueProvider):
 
     def _dirty_notify(self):
         self._is_dirty = True
-        self._dirty._notify()
+        self._dirty.notify()
 
     def __call__(self):
         if self._is_dirty:
@@ -90,26 +142,6 @@ def reactive(*args):
 # %%
 import ipywidgets as w
 import IPython.display as ipd
-
-def _display(x, out, clear_output, wait):
-    if x is None:
-        return
-    def _display():
-        if clear_output:
-            ipd.clear_output(wait=wait)
-        ipd.display(x)
-    if out is None:
-        _display()
-        return
-    with out:
-        _display()
-
-def display(x, out=None, clear_output=True, wait=True):
-    if not isinstance(x, ValueProvider):
-        _display(x, out, clear_output, wait)
-        return
-    observe(x)(lambda x: _display(x, out, clear_output, wait))
-    out.on_displayed(lambda *_: _display(x(), out, clear_output, wait))
 
 class _named_children:
     def __init__(self, children):
@@ -127,30 +159,102 @@ class HBox(_named_children, w.HBox):
         _named_children.__init__(self, children)
 
 class Output(w.Output):
-    def __init__(self):
-        self._output = w.Output()
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._output_observable = None
+
+    def _display(self, x, clear_output, wait):
+        with self:
+            if clear_output:
+                ipd.clear_output(wait=wait)
+            if x is None:
+                return
+            ipd.display(x)
     
-    def capture(self, clear_output=True, wait=True):
+    def display(self, x=_None, clear_output=True, wait=True):
         def wrap(x):
-            if isinstance(x, ValueProvider):
-                display(x, self._output, clear_output, wait)
-                return x
-            else:
-                def wrapper(*args, **kwargs):
-                    v = x(*args, **kwargs)
-                    display(v, self._output, clear_output, wait)
-                    return v
-                return wrapper
-        return wrap
+            if self._output_observable is not None:
+                self._output_observable.stop()
+                self._output_observable = None
+            if x is None:
+                return
+            self._output_observable = observe(x)(lambda x: self._display(x, clear_output, wait))
+            self.on_displayed(
+                lambda *_: self._display(x(), clear_output, wait) if not(self._output_observable is None or self._output_observable.paused) else None
+            )
+            return x
+        if x is _None:
+            return wrap
+        if isinstance(x, ValueProvider):
+            wrap(x)
+            return
+        wrap(None)
+        self._display(x, clear_output, wait)
 
-    class _display:
+    def pause(self):
+        self._output_observable.pause()
+
+    def resume(self):
+        self._output_observable.resume()
+
+    class _output:
         def __set__(self, obj, x):
-            display(x, obj._output)
+            if x is tuple:
+                if len(x)==1:
+                    x = x + (True,True)
+                elif len(x)==2:
+                    x = x + (True,)
+            else:
+                x = (x,True,True)                    
+            obj.display(*x)
 
-    display = _display()
+    output = _output()
 
 # %%
 if __name__ == '__main__':
-    x = 1
+    pass
 
     # %%
+    x1 = Value()
+    x2 = observe(x1)(print)
+    x1(3)
+    x2.pause()
+    x1(4)
+    x2.resume()
+    x1(5)
+    x2.stop()
+    x1(6)
+    x1._dirty._observers
+
+    # %%
+    ui = VBox(dict(
+        i = w.IntText(),
+        j = w.IntText(),
+        c = w.Dropdown(value='i', options=['i', 'j', 'pause', 'resume']),
+        o = Output()        
+    ))
+
+    @reactive(ui.i)
+    def i(i):
+        return i+1
+
+    @reactive(ui.j)
+    def j(j):
+        return j+1
+
+    ui.o.output = i
+
+    @observe(ui.c)
+    def o(c):
+        if c=='i':
+            ui.o.output = i
+        elif c=='j':
+            ui.o.output = j
+        elif c=='pause':
+            ui.o.pause()
+        elif c=='resume':
+            ui.o.resume()
+
+    ui
+
+# %%
