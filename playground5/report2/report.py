@@ -1,7 +1,8 @@
 # %%
 if __name__ == '__main__':
     import os
-    __file__ = os.path.expanduser('~/projects/empty.py')
+    import sys
+    sys.path[0] = os.path.expanduser('~/projects/')
     __package__ = 'decoi_atlas.playground5.report2'
 
 # %%
@@ -193,5 +194,8 @@ analysis.clust3(20).enrich.clust1(30).sigs_for_clust
 
 # %%
 analysis.clust3(20).enrich.clust1(30).expr_for_clust
+
+# %%
+
 
 

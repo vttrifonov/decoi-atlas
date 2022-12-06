@@ -366,7 +366,7 @@ _analysis._clust3._enrichment._clust1.sigs_for_clust = _analysis_clust3_enrichme
 # %%
 @property
 def _analysis_clust3_enrichment_clust1_expr_for_clust(self):
-    # %%
+    # %
     x1 = self.prev.prev
     x3 = self.data1
 
@@ -380,7 +380,7 @@ def _analysis_clust3_enrichment_clust1_expr_for_clust(self):
         drop_duplicates(x7.columns[1]).\
         sort_values([x7.columns[0], 'value']).cell_clust
 
-    # %%
+    # %
     ui = VBox(dict(
         sig_prefix = ipw.Dropdown(description='sig_prefix', options=['']+list(np.unique(x3.sig_prefix.data))),
         sig = HBox(dict(
@@ -544,7 +544,7 @@ def _analysis_clust3_enrichment_clust1_expr_for_clust(self):
 
     display(ui.out1, plot_plot1)
     display(ui.out2, plot_plot2)
-    # %%
+    # %
 
     return ui
 _analysis._clust3._enrichment._clust1.expr_for_clust = _analysis_clust3_enrichment_clust1_expr_for_clust
@@ -554,6 +554,6 @@ if __name__ == '__main__':
     self = analysis.clust3(20).enrich.clust1(30)
 
     # %%
-    self.sigs_for_clust
+    self.expr_for_clust
 
 # %%
