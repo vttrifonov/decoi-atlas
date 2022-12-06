@@ -70,7 +70,7 @@ class ValueProvider:
     def __init__(self):
         self._dirty = Observable()
 
-class _reactive_trait(ValueProvider):
+class Trait(ValueProvider):
     def __init__(self, trait):
         super().__init__()
         self._trait = trait
@@ -79,13 +79,32 @@ class _reactive_trait(ValueProvider):
     def __call__(self):
         return getattr(*self._trait)
 
+class Event(ValueProvider):
+    def __init__(self, e):
+        super().__init__()
+        e(lambda *args, **kwargs: self._dirty_notify((args, kwargs)))
+        self._msg = _None
+    
+    def _dirty_notify(self, msg):
+        self._msg = msg
+        self._dirty.notify()
+        self._msg = _None
+
+    def __call__(self):
+        if self._msg is _None:
+            raise ValueError('no message')
+        return self._msg
+
+def event(e):
+    return Event(e)
+        
 def _fix_args(args):
     args1 = []
     for a in args:
         if not isinstance(a, ValueProvider):
             if not isinstance(a, tuple):
                 a = a, 'value'
-            a = _reactive_trait(a)
+            a = Trait(a)
         args1.append(a)
     return args1
 
@@ -256,5 +275,22 @@ if __name__ == '__main__':
             ui.o.resume()
 
     ui
+
+    # %%
+    ui = VBox(dict(
+        b = w.Button(description='click'),
+    ))
+
+
+    e = event(ui.b.on_click)
+
+    @observe(e)
+    def o_e(e):
+        print(e)
+
+    ui
+
+    # %%
+    o_e.stop()
 
 # %%
