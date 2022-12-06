@@ -91,7 +91,7 @@ def reactive(*args):
 import ipywidgets as w
 import IPython.display as ipd
 
-def _display(out, x, clear_output, wait):
+def _display(x, out, clear_output, wait):
     if x is None:
         return
     def _display():
@@ -104,12 +104,12 @@ def _display(out, x, clear_output, wait):
     with out:
         _display()
 
-def display(out, x, clear_output=True, wait=True):
+def display(x, out=None, clear_output=True, wait=True):
     if not isinstance(x, ValueProvider):
-        _display(out, x, clear_output, wait)
+        _display(x, out, clear_output, wait)
         return
-    observe(x)(lambda x: _display(out, x, clear_output, wait))
-    out.on_displayed(lambda *_: _display(out, x(), clear_output, wait))
+    observe(x)(lambda x: _display(x, out, clear_output, wait))
+    out.on_displayed(lambda *_: _display(x(), out, clear_output, wait))
 
 class _named_children:
     def __init__(self, children):
@@ -126,66 +126,28 @@ class HBox(_named_children, w.HBox):
         w.HBox.__init__(self, list(children.values()), **kwargs)
         _named_children.__init__(self, children)
 
-# %%
-if False:
-    from types import SimpleNamespace as namespace
-    import traitlets as t
-
-    class Value(t.HasTraits):
-        value = t.Any()
-
-        def update(self, v):
-            self.value = v
-
-    def observe(*args):
-        def wrap(f):
-            def observer():
-                f(*[a.value for a in args])
-            for a in args:
-                a.observe(lambda _: observer(), 'value')    
-
+class Output(w.Output):
+    def __init__(self):
+        self._output = w.Output()
+    
+    def capture(self, clear_output=True, wait=True):
+        def wrap(x):
+            if isinstance(x, ValueProvider):
+                display(x, self._output, clear_output, wait)
+                return x
+            else:
+                def wrapper(*args, **kwargs):
+                    v = x(*args, **kwargs)
+                    display(v, self._output, clear_output, wait)
+                    return v
+                return wrapper
         return wrap
 
-    def observer(*args):
-        def wrap(f):
-            observe(*args)(f)
-            return f
-        return wrap
+    class _display:
+        def __set__(self, obj, x):
+            display(x, obj._output)
 
-    def reactive(*args):
-        def wrap(f, v = None):
-            if v is None:
-                v = Value()        
-            observe(*args)(lambda *a: v.update(f(*a)))
-            v.update(f(*[a.value for a in args]))
-            return v
-        return wrap
-
-    def react(*args):
-        return lambda f: reactive(*args)(f)
-
-    class Output(w.Output):
-        def display(self, x, clear_output=True, wait=True):
-            with self:
-                if clear_output:
-                    ipd.clear_output(wait=wait)
-                ipd.display(x)
-
-        def react(self, x, clear_output=True, wait=True):
-            observe(x)(lambda x: self.display(x, clear_output, wait))
-            self.on_displayed(lambda *_: self.display(x.value, clear_output, wait))
-
-
-    class VBox(w.VBox):
-        def __init__(self, children, **kwargs):
-            w.VBox.__init__(self, list(children.values()), **kwargs)
-            self.c = namespace(**children)
-
-
-    class HBox(w.HBox):
-        def __init__(self, children, **kwargs):
-            w.HBox.__init__(self, list(children.values()), **kwargs)
-            self.c = namespace(**children)
+    display = _display()
 
 # %%
 if __name__ == '__main__':
