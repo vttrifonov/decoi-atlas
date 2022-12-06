@@ -379,26 +379,34 @@ def _analysis_clust3_enrichment_clust1_expr_for_clust(self):
         drop_duplicates(x7.columns[1]).\
         sort_values([x7.columns[0], 'value']).cell_clust
 
-    sig_prefix = ipw.Dropdown(description='sig_prefix', options=['']+list(np.unique(x3.sig_prefix.data)))
-    sig_regex = ipw.Text(description='sig_regex')
-    sig = ipw.Dropdown(description='sig', options=['']+list(np.unique(x3.sig.data)))
-    gene_regex = ipw.Text(description='gene_regex')
-    genes = ipw.SelectMultiple(
-        description='genes',
-        options=np.sort(x3.feature_id.data)
-    )
-    sig_button = ipw.Button(description='update sigs')
-    genes_button = ipw.Button(description='update genes')
-    plot_button = ipw.Button(description='update plot')
-    out = ipw.Output()
-
+    ui = VBox(dict(
+        sig_prefix = ipw.Dropdown(description='sig_prefix', options=['']+list(np.unique(x3.sig_prefix.data))),
+        sig = HBox(dict(
+            regex = ipw.Text(description='sig_regex'), 
+            sig = ipw.Dropdown(description='sig', options=['']+list(np.unique(x3.sig.data))), 
+            update = ipw.Button(description='update sigs')
+        )),
+        gene = HBox(dict(
+            regex = ipw.Text(description='gene_regex'),
+            genes = ipw.SelectMultiple(
+                description='genes',
+                options=np.sort(x3.feature_id.data)
+            ),
+            update = ipw.Button(description='update genes')
+        )),
+        plot = ipw.Button(description='update plot'),
+        out = ipw.Output()
+    ))
+    
+    @reactive(ui.sig_prefix, ui.sig.regex, ui.gene.genes)
     def sig_update(sig_prefix, sig_regex, genes):    
+        genes = list(genes)
         x4 = x3[['sig_prefix', 'sig']].to_dataframe().reset_index()
 
         if sig_prefix!='':
             x4 = x4[x4.sig_prefix==sig_prefix]
 
-        if sig!='':
+        if sig_regex!='':
             x4 = x4[x4.sig.str.contains(sig_regex, regex=True)]
 
         x4 = x4.sig.to_list()
@@ -411,9 +419,10 @@ def _analysis_clust3_enrichment_clust1_expr_for_clust(self):
 
         x4 = [''] + x4
 
-        sig.options = x4
-        sig.value = ''
+        ui.sig.sig.options = x4
+        ui.sig.sig.value = ''
 
+    @reactive(ui.sig.sig, ui.gene.regex)
     def genes_update(sig, gene_regex):
         if sig=='':
             x4 = x3.feature_id.data
@@ -427,11 +436,84 @@ def _analysis_clust3_enrichment_clust1_expr_for_clust(self):
             
         x4 = np.sort(x4)
 
-        genes.options = x4
-        genes.value = genes.options
+        ui.gene.genes.options = x4
+        ui.gene.genes.value = ui.gene.genes.options
 
-    genes_button.on_click(lambda b: genes_update(sig.value, gene_regex.value))
-    sig_button.on_click(lambda b: sig_update(sig_prefix.value, sig_regex.value, list(genes.value)))
+    ui.sig.update.on_click(lambda b: sig_update())    
+    ui.gene.update.on_click(lambda b: genes_update())    
+
+    @reactive(ui.sig.sig, ui.gene.genes)
+    def x4(sig, genes):
+        x4 = x3[['set', 'clust_means']]
+        x4 = x4.rename(cell_clust_id='cell_clust')
+
+        if sig!='':
+            x4 = x4.sel(sig=sig)
+            x4['set'] = x4.set.todense()
+            x4 = x4.to_dataframe().reset_index()    
+            x4['genes'] = x4.feature_id.isin(genes)
+        else:
+            if len(genes)==0:
+                return None
+            x4 = x4.clust_means.sel(feature_id=genes)
+            x4 = x4.to_dataframe().reset_index()    
+
+        x4['cell_clust'] = x4.cell_clust.astype(pd.CategoricalDtype(x7))
+
+        return x4
+
+    @reactive(ui.sig.sig, x4)
+    def plot1(sig, x4):
+        if sig=='':
+            return None
+
+        p = (
+            ggplot(x4)+aes('cell_clust', 'clust_means', color='set')+
+                geom_boxplot()+
+                labs(title=sig)
+        )
+        if any(x4.genes):
+            p = p + geom_point(data=x4[x4.genes==True], color='black')
+        return p
+
+    @reactive(x4, ui.gene.genes)
+    def x9(x4, genes):
+        x4 = x4[x4.set==True]
+        x4 = x4[x4.genes==True]
+        if x4.shape[0]==0:
+            return None
+
+        x5 = x4.feature_id.drop_duplicates().shape[0]
+        if x5>1:
+            x10 = x4.pivot_table(index='feature_id', columns='cell_clust', values='clust_means')
+            x8 = linkage(x10, method='average')
+            x8 = dendrogram(x8, no_plot=True)['leaves']
+            x8 = x10.index.to_numpy()[x8]    
+            x4['feature_id'] = x4.feature_id.astype(pd.CategoricalDtype(x8))
+        return x4
+
+    @reactive(x9)
+    def update_label(x9):
+        x5 = x9.feature_id.drop_duplicates().shape[0]
+        ui.label = f'{x5} selected gene.'
+
+    @reactive(x9)
+    def plot2(x9):
+        x5 = x9.feature_id.drop_duplicates().shape[0]
+        if x5==0 or x5>=500:
+            return None        
+        return (
+            ggplot(x9)+aes('cell_clust', 'feature_id', fill='clust_means')+
+                geom_tile()+
+                scale_fill_gradient2(
+                    low='blue', mid='white', high='red',
+                    midpoint=0
+                )+
+                theme(
+                    figure_size=(5, 0.2*x5),
+                )+
+                labs(y='')
+        )
 
     def plot(sig, genes):
         x4 = x3[['set', 'clust_means']]
@@ -484,17 +566,10 @@ def _analysis_clust3_enrichment_clust1_expr_for_clust(self):
                     labs(y='')
             )
 
-    plot_button.on_click(out.capture(clear_output=True)(lambda b: plot(sig.value, list(genes.value))))
+    ui.plot.on_click()
+    ui.plot.on_click(ui.out.capture(clear_output=True)(lambda b: plot(ui.sis.sig.value, list(ui.gene.genes.value))))
 
-    return ipw.VBox([
-        ipw.VBox([
-            sig_prefix,
-            ipw.HBox([sig_regex, sig, sig_button]),
-            ipw.HBox([gene_regex, genes, genes_button]),
-            plot_button
-        ]),  
-        out
-    ])
+    return 
 _analysis._clust3._enrichment._clust1.expr_for_clust = _analysis_clust3_enrichment_clust1_expr_for_clust
 
 # %%
