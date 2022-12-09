@@ -85,7 +85,7 @@ class _analysis:
     @compose(property, lazy)
     def data2(self):
         x1 = self.data1.copy()
-        x1 = x1.rename(_sample_group_id='cell_group_id1')
+        x1 = x1.drop('_sample_group_id')
 
         x2 = x1.drop_dims(['cell_id', 'feature_id']).drop('blueprint.labels')
         x2 = groupby(x2.drop('n'), 'group_id2', x2.n, lambda x: x.sum(dim='group_id1'))
@@ -155,10 +155,36 @@ analysis = _analysis()
 
 # %%
 if __name__ == '__main__':
-    self = analysis
+    self = analysis    
 
     # %%
     self.model1
+
+    # %%
+    from rpy2.robjects import r as R
+    R.setwd(str(config.root))
+    R.source('.Rprofile')
+    R.source('deg/limma.R')
+
+    # %%
+    import rpy2.robjects as ro
+    from rpy2.robjects import pandas2ri, numpy2ri
+    from rpy2.robjects.conversion import localconverter
+    from ..rpy_conversions import xa2ri, dict2ri
+
+    # %%
+    x = np.arange(4).reshape((2,2))
+    x = xa.DataArray(x, coords=[('a', [1,2]), ('b', ['a', 'b'])])
+    
+    with localconverter(ro.default_converter+xa2ri):
+        R.f1(x)
+
+# %%
+    with localconverter(ro.default_converter+xa2ri) as co:
+        print(R.f2())
+
+    # %%
+
 
 
 # %%
