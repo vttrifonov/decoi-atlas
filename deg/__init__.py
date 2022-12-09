@@ -28,11 +28,11 @@ def groupby(x1, group_id='group_id', x3 = None, f = None):
     if f is None:
         return x1
 
-    x3 = xa.merge([x3, x1._sample_group_id]).groupby('_sample_group_id').apply(f)
+    x3 = x3.groupby(x1._sample_group_id).apply(f)
     x3 = xa.merge([
         x1,
-        x3.rename({'_sample_group_id': group_id})
-    ])
+        x3.rename(_sample_group_id=group_id)
+    ], join='inner')
     return x3
 
 # %%
@@ -112,6 +112,7 @@ class _analysis:
 
         x1 = self.data2.copy()
         x1['counts'] = x1.counts.transpose('feature_id', 'group_id2')
+        x1 = x1.sel(group_id2=x1['blueprint.labels']!='Macrophages')
         x8 = [['control', 'mild'], ['control', 'severe'], ['mild', 'severe']]
 
         def fit1(x9):
@@ -124,16 +125,24 @@ class _analysis:
             x11 = list()
             for x7 in x8:  
                 print(x7)
-                x4 = x9.sel(group_id2=x9.group_per_sample.isin(x7))
+                x4 = x9.sel(group_id2=x9.group_per_sample.isin(x7))                
                 x6 = x4.group_per_sample.to_dataframe()
+                x12 = x6.groupby('group_per_sample').size()
+                if x12.shape[0]<len(x7) or any(x12==1):
+                    continue
                 x6['group_per_sample'] = x6.group_per_sample.astype(pd.CategoricalDtype(x7))
                 x10 = model1(x4.counts, x6).drop_dims('group_id2')
                 x10 = x10.expand_dims(source=['model1_' + '_'.join(x7)])
                 x11.append(x10)
+            if len(x11)==0:
+                return xa.Dataset()
             x11 = xa.concat(x11, dim='source')
             return x11
-        
-        x3 = x1.drop_dims(['feature_id', 'group_id1']).drop(['freq', 'group_per_sample', 'donor'])
+
+        #x1 = x1.sel(group_id2=x1['blueprint.labels']=='NK cells')
+        #x8 = [['control', 'mild']]
+
+        x3 = x1.drop_dims(['feature_id', 'group_id1']).drop(['freq', 'group_per_sample', 'donor'])    
         x3 = groupby(x3, 'group_id3')
         x3 = xa.merge([x1[['counts', 'group_per_sample']], x3], join='inner')
         x4 = x3.groupby('_sample_group_id').apply(fit1)
