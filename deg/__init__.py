@@ -204,8 +204,6 @@ if __name__ == '__main__':
     x2 = self.model1.copy()
     x2 = x2.drop_dims('group_id2')
     x2 = x2.rename(group_id4='group_id')
-
-    # %%
     x2['logit_p_value'] = np.log2(x2.p/(1-x2.p))
 
     # %%
@@ -244,6 +242,14 @@ if __name__ == '__main__':
         ord=range(len(x6['ivl'])),            
         color=x6['leaves_color_list']
     ))
+    x6 = x6.merge(
+        x2[['purification', 'source', 'blueprint.labels']].
+            to_dataframe().reset_index(),        
+    )
+    x6_1 = x6.rename(columns={
+        k: k+'1'
+        for k in x6.columns    
+    })
 
     # %%
     x7 = x6.sort_values('ord').group_id.to_list()
@@ -263,22 +269,39 @@ if __name__ == '__main__':
     )
 
     # %%
-    x8 = x6.merge(
-        x2[['source', 'purification', 'blueprint.labels']].\
-            to_dataframe().reset_index()
-    ).sort_values('ord')
-    x8
+    x6.sort_values('ord')
 
     # %%
-    x9 = x6.set_index('group_id').color.to_xarray()
-    x9 = xa.merge([x9,  x2[['purification', 'blueprint.labels', 'source']]])
-    x9 = xa.merge([
+    x4 = xa.merge([
         x4, 
-        x9, 
-        x9.rename({k: k+'1' for k in ['group_id']+list(x9.keys())})
+        x6.set_index('group_id').to_xarray(),
+        x6_1.set_index('group_id1').to_xarray()
     ])
-    x9 = x9.to_dataframe().reset_index()
-    x9 = x9[x9.group_id!=x9.group_id1]
+
+    # %%
+    x9 = x4.to_dataframe().reset_index()
+    x9 = x9[x9.source=='model1_control_mild']
+    x9 = x9[x9.purification=='FreshEryLysis']
+    x9 = x9[x9.source1=='model1_control_mild']
+    x9 = x9[x9.purification1=='FreshPBMC']
+    for x, y in [('blueprint.labels', 'ord'), ('blueprint.labels1', 'ord1')]:
+        x9[x] = x9[x].astype(pd.CategoricalDtype(
+            x9[[x,y]].drop_duplicates().sort_values(y)[x].to_list()
+        ))
+    (
+        ggplot(x9)+
+            aes('blueprint.labels', 'blueprint.labels1', fill='cor')+
+            geom_tile()+
+            scale_fill_gradient2(
+                low='blue', mid='white', high='red',
+                midpoint=0
+            )+
+            theme(axis_text=element_text(size=6))
+    )
+
+    # %%
+    x9 = x4.to_dataframe().reset_index()
+    x9 = x9[x9.group_id!=x9.group_id1].copy()
     x9['g'] = np.apply_along_axis(
         lambda x: np.array('\n'.join(np.sort(x)), dtype=object),
         1,
@@ -323,7 +346,7 @@ if __name__ == '__main__':
     # %%
     x12 = x2.sel(var='case')
     #x12 = x12.sel(group_id=x12.source=='model1_control_mild')
-    x12 = x12.sel(group_id=x12['blueprint.labels']=='Neutrophils')
+    x12 = x12.sel(group_id=x12['blueprint.labels']=='Monocytes')
     x12 = x12.to_dataframe().reset_index()
     x12 = x12[x12.p<1e-4]
     x12 = x12.groupby(['purification', 'blueprint.labels', 'source']).size()
