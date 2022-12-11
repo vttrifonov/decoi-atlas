@@ -178,11 +178,34 @@ class _analysis:
         
         return x4
 
+    def rnaseq_counts2(self, cell_type):  
+        analysis = self
+        class counts:      
+            storage = analysis.storage/'rnaseq_counts2'/cell_type
+
+            @compose(property, lazy, XArrayCache())
+            def data(self):
+                import sparse
+                x = analysis.data2.drop_dims('group_id1')
+                x = x.sel(
+                    group_id2=x['blueprint.labels']==cell_type
+                )['counts']
+                x.data = sparse.COO(x.data)
+                return x
+
+        counts = counts()
+
+        return counts.data.todense()
+
 analysis = _analysis()
 
 # %%
 if __name__ == '__main__':
     self = analysis   
+
+    # %%
+    for cell_type in self.data2['blueprint.labels'].to_series().drop_duplicates():
+        print(cell_type, self.rnaseq_counts2(cell_type).sizes)
     
     # %%
     def cor(x1, x2, dim):
