@@ -183,18 +183,20 @@ class _analysis:
         x = self.data2.drop_dims(['feature_id', 'group_id1'])
         return x
 
-    def rnaseq_counts2(self, cell_type):  
+    def rnaseq_counts2(self, purification, cell_type):  
         analysis = self
         class counts:      
-            storage = analysis.storage/'rnaseq_counts2'/cell_type
+            storage = analysis.storage/'rnaseq_counts2'/(purification+'_'+cell_type)
 
             @compose(property, lazy, XArrayCache())
             def data(self):
                 import sparse
                 x = analysis.data2.drop_dims('group_id1')
+                x = x.sel(group_id2=x['purification']==purification)
                 x = x.sel(
                     group_id2=x['blueprint.labels']==cell_type
-                )['counts']
+                )
+                x = x['counts']
                 x.data = sparse.COO(x.data)
                 return x
 
@@ -209,8 +211,12 @@ if __name__ == '__main__':
     self = analysis   
 
     # %%
-    for cell_type in self.data2['blueprint.labels'].to_series().drop_duplicates():
-        print(cell_type, self.rnaseq_counts2(cell_type).sizes)
+    a = self.data2[['blueprint.labels', 'purification']].to_dataframe().drop_duplicates()
+    for _, x in a.iterrows():
+        print(
+            x['purification'], x['blueprint.labels'], 
+            self.rnaseq_counts2(x['purification'], x['blueprint.labels']).sizes
+        )
     
     # %%
     def cor(x1, x2, dim):
