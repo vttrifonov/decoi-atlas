@@ -183,6 +183,10 @@ class _analysis:
         x = self.data2.drop_dims(['feature_id', 'group_id1'])
         return x
 
+    @compose(property, lazy, XArrayCache())
+    def genes2(self):
+        return self.data2.feature_id.rename('symbol')
+
     def rnaseq_counts2(self, purification, cell_type):  
         analysis = self
         class counts:      
