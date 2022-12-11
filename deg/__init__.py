@@ -178,6 +178,11 @@ class _analysis:
         
         return x4
 
+    @compose(property, lazy, XArrayCache())
+    def samples2(self):
+        x = self.data2.drop_dims(['feature_id', 'group_id1'])
+        return x
+
     def rnaseq_counts2(self, cell_type):  
         analysis = self
         class counts:      
