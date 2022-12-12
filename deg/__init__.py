@@ -215,6 +215,41 @@ if __name__ == '__main__':
     self = analysis   
 
     # %%
+    # MPO
+    x3 = x3.sel(group_id3=x3.purification=='FreshEryLysis')
+    x3 = x3.sel(group_id3=x3['blueprint.labels']=='Neutrophils')
+    x3 = x3.sel(group_id2=x3._group_id3==x3.group_id3.data[0])
+    x3['rpk'] = x3['counts']/x3['counts'].sum(dim='feature_id')
+    x3['log2p1_rpk'] = np.log1p(x3.rpk)/np.log(2)
+    x7 = ['control', 'severe']
+
+    x4 = x3.sel(group_id2=x3.group_per_sample.isin(x7))                
+    x6 = x4.group_per_sample.to_dataframe()
+    x6['group_per_sample'] = x6.group_per_sample.astype(pd.CategoricalDtype(x7))
+
+    # %%
+    R.source('deg/limma.R')
+    model1 = lambda d, s: fit(R.fit1, d, s, '~group_per_sample')    
+    x10 = model1(x4.log2p1_rpk, x6)
+    #x10['group_id2'] = x10.group_id2.astype(int)
+
+    x5 = xa.merge([x10, x4], join='inner')
+    x5 = x5.sel(feature_id='MPO')
+
+    # %%
+    from plotnine import *
+    x11 = x5[[
+        'group_per_sample', 
+        'rpk', 'log2p1_rpk', 
+        #'voom', 'wts'
+    ]].to_dataframe()
+    print(
+        ggplot(x11)+
+            aes('log10p1_rpk', 'voom')+
+            geom_point()
+    )
+
+    # %%
     a = self.data2[['blueprint.labels', 'purification']].to_dataframe().drop_duplicates()
     for _, x in a.iterrows():
         print(
