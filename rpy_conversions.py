@@ -20,12 +20,13 @@ xa2ri = ro.conversion.Converter('xarray converter')
 
 @xa2ri.py2rpy.register(xa.DataArray)   
 def _xa_py2rpy(d):
-    with localconverter(ro.default_converter+numpy2ri.converter) as co:
+    with localconverter(ro.default_converter+numpy2ri.converter+dict2ri) as co:
         array = co.py2rpy(np.asarray(d.data, order='C'))
-        dimnames = ro.ListVector({k: d[k].data for k in d.dims})
+        dimnames = co.py2rpy({k: d[k].data for k in d.dims})
         dims = co.py2rpy(np.asarray(d.data.shape))
-    array = R.array(array, dim=dims)
-    array.dimnames = dimnames
+    with localconverter(ro.default_converter):
+        array = R.array(array, dim=dims)
+        array.dimnames = dimnames
     return array
 
 @xa2ri.rpy2py.register(ro.Array)
