@@ -44,37 +44,14 @@ def groupby(x1, group_id='group_id', x3 = None, f = None):
     return x3
 
 # %%
-def py2rpy(*args):
-    import rpy2.robjects as ro
-    from rpy2.robjects import pandas2ri
+def r_func(f):
     from rpy2.robjects.conversion import localconverter
-    from ..rpy_conversions import xa2ri
+    from ..rpy_conversions import num2ri, dict2ri
 
-    r = []
-    for a in args:
-        if isinstance(a, pd.DataFrame) or isinstance(a, pd.Series):
-            conv = ro.default_converter+pandas2ri.converter
-        elif isinstance(a, xa.DataArray):
-            conv = ro.default_converter+xa2ri
-        else:
-            conv = ro.default_converter
-        with localconverter(conv) as co:
-            r.append(co.py2rpy(a))
-    return r
-
-def rpy2py(x):
-    import rpy2.robjects as ro
-    from rpy2.robjects.conversion import localconverter
-    from ..rpy_conversions import xa2ri, dict2ri
-
-    with localconverter(ro.default_converter+xa2ri+dict2ri) as co:
-        return co.rpy2py(x)
-
-def fit(r, d, s, f):
-    x5 = rpy2py(r(*py2rpy(d, s, f)))
-    x5 = [v.rename(k) for k, v in x5.items()]
-    x5 = xa.merge(x5, join='inner')
-    return x5
+    def wrap(*args):
+        with localconverter(num2ri+dict2ri):
+            return f(*args)
+    return wrap
 
 # %%
 class _analysis:    
@@ -136,7 +113,7 @@ class _analysis:
         R.source('.Rprofile')
         R.source('deg/limma.R')
 
-        model1 = lambda d, s: fit(R.fit, d, s, '~group_per_sample')
+        model1 = lambda d, s: r_func(R.fit)(d, s, '~group_per_sample')
 
         x1 = self.data2.copy()
         x1 = x1.drop_dims('group_id1')
@@ -215,8 +192,7 @@ class _analysis:
                 ['control', 'mild', 'severe']
             ))
 
-            x10 = py2rpy(x9.counts, x6, '~0+group_per_sample', )
-            x10 = rpy2py(R.fit3(*x10))
+            x10 = r_func(R.fit3)(x9.counts, x6, '~0+group_per_sample')
             x10 = xa.merge([v.rename(k) for k, v in x10.items()])
 
             x10['var'] = 'var', ['control', 'mild', 'severe']
@@ -244,43 +220,6 @@ class _analysis:
         x4 = xa.merge([x4, x3._group_id3], join='inner')
         
         return x4
-
-    @compose(property, lazy, XArrayCache())
-    def voom2(self):
-        from rpy2.robjects import r as R
-        R.setwd(str(config.root))
-        R.source('.Rprofile')
-        R.source('deg/limma.R')
-
-        x1 = self.data2.copy()
-        x1 = x1.drop_dims('group_id1')
-        x1['counts'] = x1.counts.transpose('feature_id', 'group_id2')
-
-        x3 = x1.drop_dims('feature_id').drop(['freq', 'group_per_sample', 'donor']) 
-        x3 = groupby(x3, 'group_id3')
-        x3 = xa.merge([x1[['counts', 'group_per_sample']], x3], join='inner')
-
-        #x5 = x3[['_group_id3', 'group_per_sample']].to_dataframe().reset_index()
-        #x6 = x5._group_id3.astype(str) + x5.group_per_sample
-        #x6 = x5.groupby(x6).group_id2.transform(len)
-        #x5 = x5[x6>1]
-        #x3 = x3.sel(group_id2=x5.group_id2.to_list())
-
-        x2 = x3[['_group_id3', 'group_per_sample']].to_dataframe()
-        x2['var'] = x3._group_id3.astype(str) + x2.group_per_sample
-        x2['var'] = x2['var'].astype('category').cat.codes.astype(str)
-        x4 = py2rpy(x3.counts, x2[['var']], '~0+var')
-        x4 = rpy2py(R.fit3(*x4))
-        x4 = xa.merge([v.rename(k) for k, v in x4.items()])
-        x4['var'] = 'var', x4['var'].to_series().str.replace('var', '').astype(int)
-        x2['var'] = x2['var'].astype(int)
-        x6 = x2.drop_duplicates().set_index('var').\
-            to_xarray().rename(_group_id3='var_group_id3')
-        x7 = xa.merge([
-            x4, x6, 
-            x3[['_group_id3', 'purification', 'blueprint.labels']]
-        ])
-        return x7
 
     @compose(property, lazy, XArrayCache())
     def model2(self):
@@ -313,11 +252,10 @@ class _analysis:
                 x10.loc[x7[0], 'control'] = 1
                 x10.loc[x7[0], 'case'] = -1
                 x10.loc[x7[1], 'case'] = 1
-                x10 = py2rpy(
+                x10 = r_func(R.fit4)(
                     *list(x9[['coef', 'cov', 'std', 'sigma', 'df']].values()),
                     x10
                 )
-                x10 = rpy2py(R.fit4(*x10))
                 x10 = xa.merge([v.rename(k) for k, v in x10.items()])
                 x10 = x10.rename(var2='var')
                 x10 = x10.expand_dims(group_id4=[x9.group_id4])
@@ -333,7 +271,7 @@ class _analysis:
         x4 = list()
         for _, x9 in x1.groupby('group_id4'):
             _, x9 = next(iter(x1.groupby('group_id4')))
-            x5 = fit1(x9, i)
+            x5 = fit1(x9)
             x4.append(x5)
         x4 = [x for x in x4 if x is not None]
         x4 = xa.concat(x4, 'group_id4')
@@ -344,6 +282,95 @@ class _analysis:
         
         return x4
 
+    @compose(property, lazy, XArrayCache())
+    def voom2(self):
+        from rpy2.robjects import r as R
+        R.setwd(str(config.root))
+        R.source('.Rprofile')
+        R.source('deg/limma.R')
+
+        x1 = self.data2.copy()
+        x1 = x1.drop_dims('group_id1')
+        x1['counts'] = x1.counts.transpose('feature_id', 'group_id2')
+
+        x3 = x1.drop_dims('feature_id').drop(['freq', 'group_per_sample', 'donor']) 
+        x3 = groupby(x3, 'group_id3')
+        x3 = xa.merge([x1[['counts', 'group_per_sample']], x3], join='inner')
+
+        #x5 = x3[['_group_id3', 'group_per_sample']].to_dataframe().reset_index()
+        #x6 = x5._group_id3.astype(str) + x5.group_per_sample
+        #x6 = x5.groupby(x6).group_id2.transform(len)
+        #x5 = x5[x6>1]
+        #x3 = x3.sel(group_id2=x5.group_id2.to_list())
+
+        x2 = x3[['_group_id3', 'group_per_sample']].to_dataframe()
+        x2['var'] = x3._group_id3.astype(str) + x2.group_per_sample
+        x2['var'] = x2['var'].astype('category').cat.codes.astype(str)
+        x4 = r_func(R.fit3)(x3.counts, x2[['var']], '~0+var')
+        x4 = xa.merge([v.rename(k) for k, v in x4.items()])
+        x4['var'] = 'var', x4['var'].to_series().str.replace('var', '').astype(int)
+        x4['var1'] = 'var1', x4['var1'].to_series().str.replace('var', '').astype(int)
+        x2['var'] = x2['var'].astype(int)    
+        x6 = x2.drop_duplicates().set_index('var').\
+            to_xarray().rename(_group_id3='var_group_id3')
+        x7 = xa.merge([
+            x4, x6, 
+            x3[['_group_id3', 'purification', 'blueprint.labels']]
+        ])
+        x7 = x7.sel(var1=x7['var'].data)
+        return x7
+
+    @compose(property, lazy, XArrayCache())
+    def model3(self):
+        from rpy2.robjects import r as R
+        R.setwd(str(config.root))
+        R.source('.Rprofile')
+        R.source('deg/limma.R')
+
+        x1 = self.voom2.copy()
+        x2 = [['control', 'mild'], ['control', 'severe'], ['mild', 'severe']]        
+
+        i = 0
+        x9 = []        
+        x3 = x1[['var_group_id3', 'group_per_sample']].to_dataframe()
+        #x3 = x3[x3.var_group_id3<=10]
+        #x4 = x3.groupby('var_group_id3')
+        for group_id3, x5 in x3.groupby('var_group_id3'):
+            #group_id3, x5 = next(iter(x4))
+            print(group_id3)            
+            x5 = x5.reset_index().set_index('group_per_sample')['var']
+            for x6 in x2:                
+                #x6 = x2[1]
+                print(x6)
+                x8 = [x5.get(x, None) for x in x6]
+                if any(x is None for x in x8):
+                    continue
+
+                x7 = xa.DataArray(
+                    np.zeros((x1.sizes['var'], 2)),
+                    [x1['var'], ('var2', ['control', 'case'])]
+                )
+                x7.loc[x8, :] = [[1,-1], [0,1]]
+                x7 = r_func(R.fit4)(
+                    *list(x1[['coef', 'cov', 'std', 'sigma', 'df']].values()),
+                    x7
+                )
+                x7 = xa.merge([v.rename(k) for k, v in x7.items()])
+                x7 = x7.rename(var2='var')
+                x7 = x7.expand_dims(group_id4=[i])
+                x7['control'] = 'group_id4', [x6[0]]
+                x7['case'] = 'group_id4', [x6[1]]
+                x7['source'] = 'group_id4', ['model3_' + '_'.join(x6)]
+                x7['_group_id3'] = 'group_id4', [group_id3]
+                x9.append(x7)
+                i = i + 1        
+        x9 = xa.concat(x9, dim='group_id4')
+        x9 = xa.merge([
+            x9, 
+            x1[['purification', 'blueprint.labels']]
+        ], join='inner')
+        
+        return x9
 
     @compose(property, lazy, XArrayCache())
     def samples2(self):
@@ -382,6 +409,21 @@ if __name__ == '__main__':
     self = analysis   
 
     # %%
+
+    from rpy2.robjects import r as R
+    R.setwd(str(config.root))
+    R.source('.Rprofile')
+    R.source('deg/limma.R')
+
+    x1 = self.data2.copy()
+    x1 = x1.drop_dims('group_id1')
+    x1['counts'] = x1.counts.transpose('feature_id', 'group_id2')
+    x3 = x1.drop_dims('feature_id').drop(['freq', 'group_per_sample', 'donor'])    
+    x3 = groupby(x3, 'group_id3')
+    x3 = xa.merge([x1[['counts', 'group_per_sample']], x3], join='inner')
+
+
+    # %%
     x3 = x3.sel(group_id3=x3.purification=='FreshEryLysis')
     x3 = x3.sel(group_id3=x3['blueprint.labels']=='Neutrophils')
     x3 = x3.sel(group_id2=x3._group_id3==x3.group_id3.data[0])
@@ -396,42 +438,17 @@ if __name__ == '__main__':
 
     # %%
     R.source('deg/limma.R')
-    x10 = py2rpy(x4.counts, x6, '~group_per_sample')
-    x10 = rpy2py(R.fit(*x10))
+    x10 = r_func(R.fit)(x4.counts, x6, '~group_per_sample')
     x10 = xa.merge([v.rename(k) for k, v in x10.items()])
 
     # %%    
     R.source('deg/limma.R')
-    x11 = py2rpy(
-        x3.counts, 
-        x12, 
-        '~0+group_per_sample',
-        xa.DataArray(
-            [[1, -1], 
-             [0,  0],
-             [0,  1]],
-            (
-                ('var', ['control', 'mild', 'severe']), 
-                ('var2', ['(Intercept)', 'group_per_samplesevere'])
-            )
-        )
-    )
-    x11 = rpy2py(R.fit6(*x11))
-    x11 = xa.merge([v.rename(k) for k, v in x11.items()])
-    x11 = x11.rename(var2='var')
-
-    # %%
-    ((x15[['coef', 't', 'p']]-x11)).min()
-
-    # %%    
-    R.source('deg/limma.R')
-    x13 = py2rpy(x3.counts, x12, '~0+group_per_sample', )
-    x13 = rpy2py(R.fit3(*x13))
+    x13 = r_func(R.fit3)(x3.counts, x12, '~0+group_per_sample')
     x13 = xa.merge([v.rename(k) for k, v in x13.items()])
 
     # %%
     R.source('deg/limma.R')
-    x14 = py2rpy(
+    x14 = r_func(R.fit4)(
         *list(x13.values()),
         xa.DataArray(
             [[1, -1], 
@@ -440,7 +457,6 @@ if __name__ == '__main__':
             (x13['var'], ('var2', ['(Intercept)', 'group_per_samplesevere']))
         )
     )
-    x14 = rpy2py(R.fit4(*x14))
     x14 = xa.merge([v.rename(k) for k, v in x14.items()])
     x14 = x14.rename(var2='var')
 
